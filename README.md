@@ -4,7 +4,7 @@
 
 <h2 align="center">「Aha」— AutoHarness: Automated Harness Engineering for AI Agents</h2>
 
-<!-- <h3 align="center"><em>Every agent deserves an <b>aha</b> moment — the model reasons, we harness the rest.</em></h3> -->
+<h3 align="center"><em>Every agent deserves an <b>aha</b> moment — the model reasons, we harness the rest.</em></h3>
 
 
 <p align="center">
@@ -107,11 +107,11 @@ result = loop.run("Fix the failing tests in auth.py")
 
 AutoHarness supports three pipeline modes. Choose the level of governance that fits your needs:
 
-| Mode | Pipeline | Context | Multi-Agent | Use Case |
-|:-----|:---------|:--------|:------------|:---------|
-| **Core** | 6-step | Token budget + truncation | Single agent | Lightweight governance |
-| **Standard** | 8-step | + Microcompact + trace store | Basic profiles | Production agents |
-| **Enhanced ⚠️** | 14-step | + LLM summarization + image strip | Fork / Swarm / Background | Maximum governance |
+| Mode | Pipeline | Hooks | Multi-Agent | Use Case |
+|:-----|:---------|:------|:------------|:---------|
+| **Core** | 6-step | Secret scanner + path guard + output sanitizer | Single agent | Lightweight governance |
+| **Standard** | 8-step | + Risk classifier + pre-hooks | Basic profiles | Production agents |
+| **Enhanced ⚠️** | 14-step | + Turn governor + alias resolution + failure hooks | Fork / Swarm / Background | Maximum governance |
 
 ```python
 # Switch modes via constitution

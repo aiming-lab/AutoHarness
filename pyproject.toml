@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoharness"
-version = "0.1.0"
+version = "0.1.1"
 description = "Behavioral governance middleware for AI agents with multi-tier pipeline modes"
 readme = "README.md"
 license = "MIT"

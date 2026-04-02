@@ -171,6 +171,7 @@ def _build_pipeline(
         constitution,
         project_dir=project_dir,
         session_id=sid,
+        hook_registry=registry if hooks else None,
     )
 
 

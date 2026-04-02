@@ -47,7 +47,7 @@ _RISK_ORDER: dict[RiskLevel, int] = {
 
 # Tool names whose input typically contains a file path
 _PATH_KEYS = ("file_path", "path", "filename", "file")
-# Tool names that are bash-like and carry a command string
+# Tool names that are bash-like and carry a command string (lowercase for comparison)
 _BASH_TOOLS = {"bash", "shell", "terminal", "execute", "run"}
 
 
@@ -81,6 +81,7 @@ class PermissionEngine:
             self._defaults = defaults
 
         # Normalize tool permissions: convert dicts to ToolPermission objects
+        # Store with original keys AND lowercase keys for case-insensitive lookup
         self._tools: dict[str, ToolPermission] = {}
         for name, tp in (tools or {}).items():
             if isinstance(tp, dict):
@@ -88,13 +89,19 @@ class PermissionEngine:
                 if "policy" not in tp:
                     tp = {**tp, "policy": "restricted"}
                 try:
-                    self._tools[name] = ToolPermission(**{
+                    perm = ToolPermission(**{
                         k: v for k, v in tp.items() if k in ToolPermission.model_fields
                     })
+                    self._tools[name] = perm
+                    # Also register lowercase variant for case-insensitive matching
+                    if name != name.lower():
+                        self._tools.setdefault(name.lower(), perm)
                 except Exception:
                     logger.warning("Skipping invalid tool permission for %s", name)
             else:
                 self._tools[name] = tp
+                if name != name.lower():
+                    self._tools.setdefault(name.lower(), tp)
 
         self._project_dir = project_dir or os.getcwd()
         # Pre-compile regex patterns per tool for performance
@@ -110,6 +117,15 @@ class PermissionEngine:
     # Public API
     # ------------------------------------------------------------------
 
+    def _resolve_tool_name(self, tool_name: str) -> str:
+        """Resolve tool name with case-insensitive fallback."""
+        if tool_name in self._tools:
+            return tool_name
+        lower = tool_name.lower()
+        if lower in self._tools:
+            return lower
+        return tool_name
+
     def decide(
         self,
         tool_call: ToolCall,
@@ -120,7 +136,7 @@ class PermissionEngine:
 
         Applies the 8-priority cascade described in the module docstring.
         """
-        tool_name = tool_call.tool_name
+        tool_name = self._resolve_tool_name(tool_call.tool_name)
 
         # -- Priority 1: Explicit constitution denies (path + operation) --
         path = self._extract_path(tool_call)
@@ -460,7 +476,7 @@ class PermissionEngine:
                 return str(value)
 
         # For bash-type tools, try to extract a path from the command string
-        if tool_call.tool_name in _BASH_TOOLS:
+        if tool_call.tool_name.lower() in _BASH_TOOLS:
             cmd = tool_call.tool_input.get("command", "")
             if isinstance(cmd, str):
                 return self._path_from_command(cmd)
@@ -469,7 +485,7 @@ class PermissionEngine:
 
     def _extract_command(self, tool_call: ToolCall) -> str | None:
         """Extract the command string from bash-type tool calls."""
-        if tool_call.tool_name in _BASH_TOOLS:
+        if tool_call.tool_name.lower() in _BASH_TOOLS:
             cmd = tool_call.tool_input.get("command", "")
             if isinstance(cmd, str) and cmd:
                 return cmd

@@ -143,7 +143,7 @@ class TestWrapCommand:
             "--audit-log", audit_path,
             "--", "echo", "test",
         ])
-        assert "AutoHarness Wrapper Mode" in result.stderr
+        assert "AutoHarness Wrapper Mode" in result.output
 
     def test_wrap_sets_env_vars(self, runner, tmp_path):
         """The wrapped subprocess should see AUTOHARNESS_ACTIVE=1."""
@@ -276,7 +276,7 @@ class TestReportCommand:
             "--session", "nonexistent-session",
         ])
         assert result.exit_code == 0
-        assert "No audit records" in result.stderr
+        assert "No audit records" in result.output
 
 
 # -----------------------------------------------------------------------
@@ -288,8 +288,8 @@ class TestAgentsCommand:
     def test_agents_list(self, runner):
         result = runner.invoke(cli, ["agents"])
         assert result.exit_code == 0
-        assert "coder" in result.stderr
-        assert "reviewer" in result.stderr
-        assert "planner" in result.stderr
-        assert "executor" in result.stderr
-        assert "Built-in Agent Profiles" in result.stderr
+        assert "coder" in result.output
+        assert "reviewer" in result.output
+        assert "planner" in result.output
+        assert "executor" in result.output
+        assert "Built-in Agent Profiles" in result.output

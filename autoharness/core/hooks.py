@@ -117,6 +117,9 @@ def hook(event: str, name: str | None = None) -> Callable[[_F], _F]:
 # Secret patterns compiled from the secrets_in_content rules
 _SECRET_COMPILED: list[tuple[str, re.Pattern[str]]] = []
 
+# PII patterns for output sanitization
+_PII_COMPILED: list[tuple[str, re.Pattern[str]]] = []
+
 # Protected config patterns
 _CONFIG_COMPILED: list[re.Pattern[str]] = []
 
@@ -138,6 +141,20 @@ def _ensure_patterns() -> None:
                 _SECRET_COMPILED.append((rp.description, compiled))
             except re.error:
                 logger.warning("Failed to compile secret pattern: %s", rp.pattern)
+
+    # PII patterns — email, phone, SSN
+    _pii_patterns = [
+        ("Email address", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"),
+        ("US phone number", (
+            r"(?<!\d)(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\d)"
+        )),
+        ("US Social Security Number", r"\b\d{3}[\s-]?\d{2}[\s-]?\d{4}\b"),
+    ]
+    for desc, pat in _pii_patterns:
+        try:
+            _PII_COMPILED.append((desc, re.compile(pat)))
+        except re.error:
+            logger.warning("Failed to compile PII pattern: %s", pat)
 
     # Protected config file patterns — common linter/formatter configs
     _protected_config_patterns = [
@@ -415,16 +432,18 @@ class HookRegistry:
                 "path_guard", self._path_guard,
                 priority=10, timeout=10.0,
             ))
+            # Output sanitizer is essential even at minimal profile —
+            # prevents secret leakage in tool outputs
+            self._post_hooks.append(HookEntry(
+                "output_sanitizer", self._output_sanitizer,
+                priority=10, timeout=10.0,
+            ))
 
         # standard+ hooks
         if self._profile_level >= 1:
             self._pre_hooks.append(HookEntry(
                 "risk_classifier", self._risk_classifier_hook,
                 priority=20, timeout=10.0,
-            ))
-            self._post_hooks.append(HookEntry(
-                "output_sanitizer", self._output_sanitizer,
-                priority=10, timeout=10.0,
             ))
 
         # strict+ hooks
@@ -508,9 +527,10 @@ class HookRegistry:
                 and resolved != self._project_root
             ):
                 # Allow /tmp and other common safe system paths
-                safe_prefixes = (
+                # Apply realpath to prefixes too — on macOS /tmp -> /private/tmp
+                safe_prefixes = tuple(os.path.realpath(p) for p in (
                     "/tmp", "/var/tmp", "/dev/null", "/dev/stderr", "/dev/stdout",
-                )
+                ))
                 if not any(resolved.startswith(p) for p in safe_prefixes):
                     return HookResult(
                         action=HookAction.deny,
@@ -608,9 +628,9 @@ class HookRegistry:
         result: ToolResult,
         context: dict[str, Any],
     ) -> HookResult:
-        """Scan tool output for leaked secrets and replace with [REDACTED].
+        """Scan tool output for leaked secrets and PII, replace with [REDACTED].
 
-        Active at profile: standard+
+        Active at profile: minimal+
 
         Because ToolResult is frozen, we cannot mutate it in place.  Instead
         we return a ``sanitize`` action with the cleaned text in
@@ -624,8 +644,27 @@ class HookRegistry:
         sanitized = output_text
         found_any = False
 
+        # Redact secrets
         for description, pattern in _SECRET_COMPILED:
             new_text, count = pattern.subn("[REDACTED]", sanitized)
+            if count > 0:
+                found_any = True
+                logger.warning(
+                    "Output sanitizer redacted %d occurrence(s) of: %s",
+                    count,
+                    description,
+                )
+                sanitized = new_text
+
+        # Redact PII (email, phone, SSN)
+        _pii_labels = {
+            "Email address": "[EMAIL REDACTED]",
+            "US phone number": "[PHONE REDACTED]",
+            "US Social Security Number": "[SSN REDACTED]",
+        }
+        for description, pattern in _PII_COMPILED:
+            label = _pii_labels.get(description, "[PII REDACTED]")
+            new_text, count = pattern.subn(label, sanitized)
             if count > 0:
                 found_any = True
                 logger.warning(
@@ -638,7 +677,7 @@ class HookRegistry:
         if found_any:
             return HookResult(
                 action=HookAction.sanitize,
-                reason="Secrets redacted from tool output",
+                reason="Secrets/PII redacted from tool output",
                 severity="warning",
                 sanitized_output=sanitized,
             )

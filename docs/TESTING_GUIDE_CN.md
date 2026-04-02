@@ -51,7 +51,7 @@ python -c "import autoharness; print(f'v{autoharness.__version__} — {len(autoh
 
 **预期输出：**
 ```
-v0.1.1 — 43 public APIs
+v0.1.1 — 45 public APIs
 ```
 
 ### 先运行测试套件
@@ -83,7 +83,7 @@ from autoharness import (
     ValidationPipeline, RailResult, CostTracker, CostReport,
     generate_decoy_tools, detect_frustration,
 )
-print("All 43 APIs imported successfully!")
+print("All 45 APIs imported successfully!")
 ```
 
 ### 测试 2.2：检测危险命令
@@ -148,9 +148,9 @@ with open(path, "w") as f:
     f.write(yaml_content)
 
 constitution = Constitution.load(path)
-print(f"Name: {constitution.identity.name}")
-print(f"Boundaries: {constitution.identity.boundaries}")
-print(f"Tools configured: {list(constitution.permissions.tools.keys())}")
+print(f"Name: {constitution.identity['name']}")
+print(f"Boundaries: {constitution.identity['boundaries']}")
+print(f"Tools configured: {list(constitution.permissions.get('tools', {}).keys())}")
 ```
 
 **验证：** 无报错，宪法各字段正确填充。
@@ -458,7 +458,7 @@ for task, expected_min in test_tasks:
 ```python
 import tempfile
 from autoharness import SessionState
-from autoharness.session.state import save_session, load_session
+from autoharness.session.persistence import save_session, load_session
 
 tmpdir = tempfile.mkdtemp()
 
@@ -831,7 +831,7 @@ print(f"Response: {result[:100]}...")
 ### 安装与导入
 - [ ] `pip install -e .` 无错完成
 - [ ] 在干净的 venv 中执行 `pip install autoharness` 成功
-- [ ] 全部 43 个公开 API 可正常导入
+- [ ] 全部 45 个公开 API 可正常导入
 - [ ] 无循环导入错误
 - [ ] 安装后 `autoharness` CLI 命令可用
 

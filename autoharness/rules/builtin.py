@@ -429,6 +429,17 @@ _FILE_READ_HIGH: list[RiskPattern] = [
         description=".netrc — plaintext login credentials",
         category="file_read",
     ),
+    # Sensitive system files
+    RiskPattern(
+        pattern=r"(^|/)(etc/shadow|etc/passwd|etc/sudoers)$",
+        description="Sensitive system file (shadow/passwd/sudoers)",
+        category="file_read",
+    ),
+    RiskPattern(
+        pattern=r"(^|/)\.ssh/(id_rsa|id_ed25519|id_ecdsa|id_dsa|authorized_keys|config)$",
+        description="SSH key or config file",
+        category="file_read",
+    ),
 ]
 
 # ---------------------------------------------------------------------------

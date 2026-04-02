@@ -104,12 +104,26 @@ BUILTIN_AGENTS: dict[str, AgentDefinition] = {
     "GeneralPurpose": GENERAL_PURPOSE_AGENT,
 }
 
+# Common aliases for built-in agents
+_AGENT_ALIASES: dict[str, str] = {
+    "general": "GeneralPurpose",
+    "general-purpose": "GeneralPurpose",
+    "explore": "Explore",
+    "plan": "Plan",
+    "verification": "Verification",
+    "verify": "Verification",
+}
+
 def get_builtin_agent(name: str) -> AgentDefinition | None:
-    """Get a built-in agent by name (case-insensitive)."""
+    """Get a built-in agent by name (case-insensitive, with aliases)."""
     # Try exact match first
     if name in BUILTIN_AGENTS:
         return BUILTIN_AGENTS[name]
-    # Case-insensitive
+    # Try alias lookup
+    alias_target = _AGENT_ALIASES.get(name.lower())
+    if alias_target:
+        return BUILTIN_AGENTS[alias_target]
+    # Case-insensitive fallback
     name_lower = name.lower()
     for key, agent in BUILTIN_AGENTS.items():
         if key.lower() == name_lower:

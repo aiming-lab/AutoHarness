@@ -58,7 +58,7 @@ class TestHookProfiles:
         assert "secret_scanner" in pre_names
         assert "path_guard" in pre_names
         assert "risk_classifier" not in pre_names
-        assert hooks["post_tool_use"] == []
+        assert "output_sanitizer" in hooks["post_tool_use"]
 
     def test_standard_profile(self):
         registry = HookRegistry(profile="standard")

@@ -102,6 +102,7 @@ class ToolGovernancePipeline:
         project_dir: str | None = None,
         session_id: str | None = None,
         mode: PipelineMode | str | None = None,
+        hook_registry: Any | None = None,
     ) -> None:
         self._session_id = session_id or str(uuid.uuid4())[:12]
         self._project_dir = project_dir or str(Path.cwd())
@@ -135,8 +136,10 @@ class ToolGovernancePipeline:
         defaults = self._get_permission_defaults(config)
         self._permission_engine = PermissionEngine(defaults=defaults, tools=tools_permissions)
 
-        # Hooks: only standard and enhanced modes use the hook registry
-        if self._mode in (PipelineMode.standard, PipelineMode.enhanced):
+        # Hooks: use externally provided registry, or build one based on mode
+        if hook_registry is not None:
+            self._hook_registry = hook_registry
+        elif self._mode in (PipelineMode.standard, PipelineMode.enhanced):
             hook_profile = self._get_hook_profile(config)
             self._hook_registry = HookRegistry(profile=hook_profile)
         else:

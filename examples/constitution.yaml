@@ -18,6 +18,9 @@
 
 version: "1.0"
 
+# Pipeline mode: core (6-step), standard (8-step), or enhanced (14-step)
+mode: standard
+
 
 # ----------------------------------------------------------------------------
 # Identity — describes this agent and its operating context
