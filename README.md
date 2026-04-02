@@ -4,7 +4,7 @@
 
 <h2 align="center">「Aha」— AutoHarness: Automated Harness Engineering for AI Agents</h2>
 
-<h3 align="center"><em>Every agent deserves an <b>aha</b> moment — the model reasons, we harness the rest.</em></h3>
+<!-- <h3 align="center"><em>Every agent deserves an <b>aha</b> moment — the model reasons, we harness the rest.</em></h3> -->
 
 
 <p align="center">
