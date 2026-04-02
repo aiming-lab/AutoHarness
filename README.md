@@ -168,12 +168,11 @@ Token budget management      ·  Multi-agent profiles       ·  JSONL audit trai
 ## 🖥️ CLI
 
 ```bash
-autoharness init                          # Generate constitution (default/strict/soc2/hipaa/financial)
-autoharness init --mode core              # Generate with specific pipeline mode
+autoharness init                          # Interactive wizard (agent type, LLM provider, security level, pipeline mode, etc.)
 autoharness mode                          # Show current pipeline mode
 autoharness mode enhanced                 # Switch pipeline mode
 autoharness validate constitution.yaml    # Validate a constitution file
-autoharness check --stdin --format json   # Check a tool call against your rules
+autoharness check --stdin --format json   # Check a tool call against your rules (tool_name/tool_input format)
 autoharness audit summary                 # View audit summary
 autoharness install --target claude-code  # Install as a Claude Code hook (one command)
 autoharness export --format cursor        # Export cross-harness constitution

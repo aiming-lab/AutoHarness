@@ -641,7 +641,30 @@ def init(
         )
     security = security or "standard"
 
-    # 4. Session persistence
+    # 4. Pipeline mode
+    mode_descriptions = {
+        "core": "6-step pipeline — lightweight governance",
+        "standard": "8-step pipeline — production agents",
+        "enhanced": "14-step pipeline — maximum governance (default)",
+    }
+    if mode is None and not non_interactive:
+        console.print()
+        console.print("[bold]Pipeline mode?[/]")
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column("Mode", style="cyan bold", min_width=12)
+        table.add_column("Description")
+        for key, desc in mode_descriptions.items():
+            table.add_row(key, desc)
+        console.print(table)
+        mode = Prompt.ask(
+            "Pipeline mode",
+            choices=list(mode_descriptions.keys()),
+            default="enhanced",
+            console=console,
+        )
+    mode = mode or "enhanced"
+
+    # 5. Session persistence
     if session_persistence is None and not non_interactive:
         session_persistence = Confirm.ask(
             "Enable session persistence?",
@@ -671,7 +694,7 @@ def init(
     # --- Generate constitution ---------------------------------------------
     tmpl = SECURITY_TEMPLATES[security]
     project_type_label = project_info.get("language", "unknown")
-    constitution_content = render_constitution(tmpl, project_name, project_type_label)
+    constitution_content = render_constitution(tmpl, project_name, project_type_label, mode)
 
     # --- Write files -------------------------------------------------------
     created_files: list[str] = []
