@@ -1,0 +1,45 @@
+name: 'AutoHarness Check'
+description: 'Validate AI agent tool calls against governance rules'
+branding:
+  icon: 'shield'
+  color: 'blue'
+inputs:
+  constitution:
+    description: 'Path to constitution.yaml'
+    required: false
+    default: 'constitution.yaml'
+  max-blocks:
+    description: 'Maximum allowed blocked actions (0 = fail on any block)'
+    required: false
+    default: '0'
+  audit-output:
+    description: 'Path to write audit report'
+    required: false
+  version:
+    description: 'AutoHarness version to install (default: latest)'
+    required: false
+    default: ''
+runs:
+  using: 'composite'
+  steps:
+    - name: Install AutoHarness
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install "autoharness==${{ inputs.version }}"
+        else
+          pip install autoharness
+        fi
+
+    - name: Validate constitution
+      shell: bash
+      run: autoharness validate ${{ inputs.constitution }}
+
+    - name: Run audit check
+      shell: bash
+      run: |
+        ARGS="--max-blocks ${{ inputs.max-blocks }}"
+        if [ -n "${{ inputs.audit-output }}" ]; then
+          ARGS="$ARGS --output ${{ inputs.audit-output }}"
+        fi
+        autoharness audit check $ARGS

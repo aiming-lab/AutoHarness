@@ -1,0 +1,62 @@
+version: "1.0"
+
+identity:
+  name: my-project
+  description: "Minimal governance"
+  boundaries:
+    - "Ask before destructive operations"
+    - "Never expose secrets"
+
+rules:
+  - id: confirm-destructive-ops
+    description: "Block destructive operations without confirmation"
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "rm\\s+-rf|git\\s+push.*--force|git\\s+reset\\s+--hard"
+
+  - id: no-secret-exposure
+    description: "Never expose secrets or credentials"
+    severity: error
+    enforcement: hook
+
+permissions:
+  defaults:
+    unknown_tool: allow
+    unknown_path: allow
+    on_error: deny
+  tools:
+    Bash:
+      policy: restricted
+      deny_patterns:
+        - "rm\\s+-rf\\s+/"
+        - "mkfs\\."
+        - "dd\\s+if=.*of=/dev/"
+        - "chmod\\s+-R\\s+777\\s+/"
+    Edit:
+      policy: restricted
+      deny_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+
+risk:
+  classifier: rules
+  thresholds:
+    low: allow
+    medium: allow
+    high: deny
+    critical: deny
+
+hooks:
+  profile: minimal
+
+audit:
+  enabled: true
+  format: jsonl
+  output: .autoharness/audit.jsonl
+  retention_days: 30
+  include:
+    - tool_blocked
+    - tool_error

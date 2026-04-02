@@ -1,0 +1,356 @@
+# ============================================================================
+# AutoHarness Constitution — Financial Services Compliance Template
+# ============================================================================
+#
+# This template enforces controls for AI agents operating in financial
+# services environments. Covers PCI DSS, SEC regulations, SOX controls,
+# and general financial industry best practices.
+#
+# Regulatory Frameworks Referenced:
+#   PCI DSS — Payment Card Industry Data Security Standard
+#   SEC     — Securities and Exchange Commission regulations
+#   SOX     — Sarbanes-Oxley Act (financial reporting integrity)
+#   GLBA    — Gramm-Leach-Bliley Act (customer data protection)
+#   BSA/AML — Bank Secrecy Act / Anti-Money Laundering
+#
+# Usage:
+#   autoharness init --template financial
+#   autoharness validate
+#   autoharness install --target claude-code
+#
+# ============================================================================
+
+version: "1.0"
+
+
+# ----------------------------------------------------------------------------
+# Identity
+# ----------------------------------------------------------------------------
+
+identity:
+  name: financial-compliant-agent
+  description: "Financial services compliant AI agent — PCI DSS, SEC, SOX controls enforced"
+  boundaries:
+    - "Never access, store, or transmit cardholder data in plaintext (PCI DSS Req 3)"
+    - "Never modify regulatory filings, compliance documents, or audit reports (SOX §302)"
+    - "No access to restricted securities data — insider trading prevention (SEC Rule 10b-5)"
+    - "All financial data access must be audited with full attribution (SOX §404)"
+    - "High-value operations require multi-person approval (SOX §302)"
+    - "Detect and block PII/financial identifiers: credit cards, bank accounts, SSNs (GLBA)"
+
+
+# ----------------------------------------------------------------------------
+# Rules
+# ----------------------------------------------------------------------------
+
+rules:
+  # --- PCI DSS Requirement 3: Protect Stored Cardholder Data ---
+  - id: pci-cardholder-data-protection
+    description: >
+      Detect and block credit card numbers (Primary Account Numbers) in tool
+      inputs and outputs. PCI DSS Req 3 — render PAN unreadable anywhere
+      it is stored. Matches Visa, Mastercard, Amex, Discover patterns.
+    severity: error
+    enforcement: hook
+    triggers:
+      # Visa (starts with 4, 13-16 digits)
+      - tool: Bash
+        pattern: "\\b4[0-9]{12}(?:[0-9]{3})?\\b"
+      # Mastercard (starts with 5[1-5] or 2[2-7], 16 digits)
+      - tool: Bash
+        pattern: "\\b(?:5[1-5][0-9]{2}|2[2-7][0-9]{2})[0-9]{12}\\b"
+      # Amex (starts with 34 or 37, 15 digits)
+      - tool: Bash
+        pattern: "\\b3[47][0-9]{13}\\b"
+      # Discover (starts with 6011 or 65, 16 digits)
+      - tool: Bash
+        pattern: "\\b(?:6011|65[0-9]{2})[0-9]{12}\\b"
+
+  # --- PCI DSS Requirement 3.4: Render PAN Unreadable ---
+  - id: pci-no-plaintext-pan
+    description: >
+      Block any attempt to write, log, or echo credit card numbers.
+      PCI DSS Req 3.4 — PAN must be rendered unreadable via truncation,
+      hashing, tokenization, or strong encryption.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "echo\\s+.*\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}"
+      - tool: Edit
+        pattern: "\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}"
+
+  # --- Bank Account / Routing Number Protection (GLBA) ---
+  - id: financial-account-protection
+    description: >
+      Detect and block bank account numbers and routing numbers in outputs.
+      GLBA requires protection of customer financial information.
+      Matches ABA routing numbers (9 digits starting with 0-3) and common
+      account number formats.
+    severity: error
+    enforcement: hook
+    triggers:
+      # ABA routing number (9 digits, checksum validation not in regex)
+      - tool: Bash
+        pattern: "\\brouting[:\\s]*[0-3]\\d{8}\\b"
+      # Bank account reference patterns
+      - tool: Bash
+        pattern: "\\baccount[:\\s#]*\\d{8,17}\\b"
+
+  # --- SEC Rule 10b-5: Insider Trading Prevention ---
+  - id: no-restricted-securities-access
+    description: >
+      Block access to restricted securities lists, material non-public
+      information (MNPI), and trading system internals. SEC Rule 10b-5
+      prohibits fraud in connection with securities transactions.
+      Agents must not access data that could enable insider trading.
+    severity: error
+    enforcement: both
+    triggers:
+      - tool: Bash
+        pattern: "cat\\s+.*restricted.*list|cat\\s+.*mnpi|cat\\s+.*insider|cat\\s+.*trading.*signal"
+      - tool: Read
+        pattern: "restricted.*list|mnpi|insider.*trad|pre.?announcement"
+
+  # --- SOX §302: Financial Reporting Integrity ---
+  - id: no-compliance-doc-modification
+    description: >
+      Regulatory filings, compliance documents, audit reports, and financial
+      statements must never be modified by an AI agent without explicit
+      multi-person authorization. SOX §302 — CEO/CFO certification of
+      financial reports; unauthorized modification is a criminal offense.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Edit
+        pattern: "10-K|10-Q|8-K|annual.?report|audit.?report|compliance.?report"
+      - tool: Write
+        pattern: "10-K|10-Q|8-K|annual.?report|audit.?report|compliance.?report"
+
+  # --- SOX §404: Audit Trail ---
+  - id: audit-all-financial-data-access
+    description: >
+      Every access to financial data, trading systems, or customer records
+      must produce an immutable audit trail. SOX §404 — management must
+      assess the effectiveness of internal controls over financial reporting.
+    severity: error
+    enforcement: hook
+
+  # --- SOX §302: Multi-Approval for High-Value Operations ---
+  - id: multi-approval-high-value
+    description: >
+      Operations that could affect financial data, deploy to production,
+      or modify access controls require explicit confirmation. Simulates
+      dual-control / four-eyes principle required by SOX and banking regs.
+    severity: error
+    enforcement: both
+    triggers:
+      - tool: Bash
+        pattern: "deploy|migrate|rollback|DROP\\s+TABLE|DELETE\\s+FROM|TRUNCATE"
+      - tool: Bash
+        pattern: "git\\s+push.*prod|git\\s+push.*main|git\\s+push.*release"
+
+  # --- No Market Data Manipulation ---
+  - id: no-market-data-manipulation
+    description: >
+      Block any attempt to modify, spoof, or fabricate market data feeds,
+      price quotes, or order books. SEC and CFTC regulations prohibit
+      market manipulation (Dodd-Frank Act §747, SEC Rule 10b-5).
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "curl.*-X\\s+(POST|PUT|PATCH).*market|curl.*-X\\s+(POST|PUT|PATCH).*price|curl.*-X\\s+(POST|PUT|PATCH).*order"
+      - tool: Edit
+        pattern: "market.?data|price.?feed|order.?book|trade.?signal"
+
+  # --- GLBA: Customer Data Protection ---
+  - id: customer-financial-data-protection
+    description: >
+      Protect customer financial data including account balances, transaction
+      history, and personal financial information. GLBA Safeguards Rule
+      requires financial institutions to protect customer information.
+    severity: error
+    enforcement: hook
+
+  # --- SSN Protection ---
+  - id: ssn-detection
+    description: >
+      Detect and block Social Security Numbers in all tool inputs and
+      outputs. Required by GLBA, state privacy laws, and internal
+      data classification policies.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+
+  # --- No Secret Exposure ---
+  - id: no-secret-exposure
+    description: >
+      Never commit, log, or transmit API keys, database credentials, or
+      encryption keys. Required by PCI DSS Req 2, SOX, and GLBA.
+    severity: error
+    enforcement: hook
+
+  # --- Data Residency Awareness ---
+  - id: data-residency-enforcement
+    description: >
+      Block data transfers to regions outside authorized jurisdictions.
+      Many financial regulations require data to remain within specific
+      geographic boundaries (e.g., EU GDPR, local banking regulations).
+      Flag outbound transfers for manual review.
+    severity: warning
+    enforcement: both
+    triggers:
+      - tool: Bash
+        pattern: "scp\\s+|rsync\\s+|aws\\s+s3\\s+cp|gsutil\\s+cp|az\\s+storage.*copy"
+
+
+# ----------------------------------------------------------------------------
+# Permissions — strict access controls (PCI DSS Req 7, SOX §404)
+# ----------------------------------------------------------------------------
+
+permissions:
+  defaults:
+    # PCI DSS Req 7: restrict access to need-to-know
+    unknown_tool: deny
+    # SOX: deny unrecognized paths
+    unknown_path: deny
+    # Fail-safe
+    on_error: deny
+
+  tools:
+    Bash:
+      policy: restricted
+      deny_patterns:
+        # Catastrophic operations
+        - "rm\\s+-rf\\s+/"
+        - "rm\\s+-rf\\s+~"
+        - "mkfs\\."
+        - "dd\\s+if=.*of=/dev/"
+        # Piped remote execution
+        - "curl\\s+.*\\|\\s*(ba)?sh"
+        - "wget\\s+.*\\|\\s*(ba)?sh"
+        # Privilege escalation
+        - "sudo\\s+"
+        - "chmod\\s+-R\\s+777"
+        # Force operations on critical branches
+        - "git\\s+push\\s+.*--force\\s+.*(main|master|release|prod)"
+        - "git\\s+reset\\s+--hard"
+        # Database destruction
+        - "DROP\\s+DATABASE"
+        - "TRUNCATE\\s+.*financial|TRUNCATE\\s+.*account|TRUNCATE\\s+.*transaction"
+      ask_patterns:
+        # All git push operations require confirmation
+        - "git\\s+push"
+        - "git\\s+commit"
+        # Database queries need review
+        - "psql\\s+"
+        - "mysql\\s+"
+        - "mongo\\s+"
+        # Network operations
+        - "curl\\s+"
+        - "wget\\s+"
+        # Deployment
+        - "deploy"
+        - "migrate"
+
+    Edit:
+      policy: restricted
+      deny_paths:
+        # PCI DSS Req 3: cardholder data files
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+        - "credentials.json"
+        - ".aws/credentials"
+        - ".netrc"
+        # SOX: compliance documents are immutable
+        - "**/compliance/**"
+        - "**/regulatory/**"
+        - "**/audit-reports/**"
+        - "**/sec-filings/**"
+      ask_paths:
+        - "*.yaml"
+        - "*.yml"
+        - "*.toml"
+        - "*.conf"
+        - "Dockerfile"
+
+    Read:
+      policy: restricted
+      deny_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/id_*"
+        - "*.pem"
+        - "*.key"
+        - ".aws/credentials"
+        # Restricted trading data
+        - "**/restricted-list*"
+        - "**/mnpi/**"
+      ask_paths:
+        - "*.csv"
+        - "*.tsv"
+        - "*.parquet"
+
+    Write:
+      policy: restricted
+      deny_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+        - "**/compliance/**"
+        - "**/regulatory/**"
+        - "**/sec-filings/**"
+
+
+# ----------------------------------------------------------------------------
+# Risk — conservative, SOX-aligned
+# ----------------------------------------------------------------------------
+
+risk:
+  classifier: rules
+  thresholds:
+    low: allow
+    medium: ask        # Financial: human-in-the-loop for anything non-trivial
+    high: deny
+    critical: deny
+
+
+# ----------------------------------------------------------------------------
+# Hooks — strict profile for maximum protection
+# ----------------------------------------------------------------------------
+# Strict profile enables all built-in hooks:
+#   - Secret scanner (PCI DSS Req 2, 3)
+#   - PII filter with financial patterns (GLBA, PCI DSS)
+#   - Output sanitization for card numbers and account data
+#   - Path guard for compliance documents (SOX §302)
+#   - Config protection
+
+hooks:
+  profile: strict
+
+
+# ----------------------------------------------------------------------------
+# Audit — full trail for regulatory examination (SOX §404)
+# ----------------------------------------------------------------------------
+# Financial regulators (SEC, OCC, FINRA) may request audit logs during
+# examination. Retention set to 7 years per SEC Rule 17a-4.
+
+audit:
+  enabled: true
+  format: jsonl
+  output: .autoharness/audit.jsonl
+  retention_days: 2555    # 7 years per SEC Rule 17a-4
+  include:
+    - tool_call           # SOX §404: all executions logged
+    - tool_blocked        # SOX §404: all denials with reason
+    - tool_error          # SOX §404: errors captured
+    - hook_fired          # SOX §404: safeguard activations
+    - permission_check    # SOX §404: authorization decisions

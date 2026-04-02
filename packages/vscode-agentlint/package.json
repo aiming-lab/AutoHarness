@@ -1,0 +1,121 @@
+{
+  "name": "vscode-autoharness",
+  "displayName": "AutoHarness",
+  "description": "AI Agent governance visualization and monitoring",
+  "version": "0.1.0",
+  "publisher": "autoharness",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aiming-lab/AutoHarness"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "governance",
+    "audit",
+    "security",
+    "llm"
+  ],
+  "icon": "media/icon.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "autoharness.showDashboard",
+        "title": "AutoHarness: Show Governance Dashboard",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "autoharness.showAuditLog",
+        "title": "AutoHarness: Show Audit Log"
+      },
+      {
+        "command": "autoharness.validateConstitution",
+        "title": "AutoHarness: Validate Constitution"
+      },
+      {
+        "command": "autoharness.initConstitution",
+        "title": "AutoHarness: Initialize Constitution File"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "autoharness",
+          "title": "AutoHarness",
+          "icon": "$(shield)"
+        }
+      ]
+    },
+    "views": {
+      "autoharness": [
+        {
+          "id": "autoharness.auditTree",
+          "name": "Audit Log"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "autoharness.showDashboard",
+          "when": "view == autoharness.auditTree",
+          "group": "navigation"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "yaml",
+        "filenames": [
+          "constitution.yaml",
+          "constitution.yml"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "AutoHarness",
+      "properties": {
+        "autoharness.auditLogPath": {
+          "type": "string",
+          "default": "audit.jsonl",
+          "description": "Path to the JSONL audit log file (relative to workspace root)"
+        },
+        "autoharness.constitutionPath": {
+          "type": "string",
+          "default": "constitution.yaml",
+          "description": "Path to the constitution file (relative to workspace root)"
+        },
+        "autoharness.autoValidate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically validate constitution files on save"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^5.3.0"
+  }
+}

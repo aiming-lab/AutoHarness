@@ -1,0 +1,429 @@
+# ============================================================================
+# AutoHarness Constitution — Maximum Security (Strict) Template
+# ============================================================================
+#
+# The most restrictive template available. Designed for high-security
+# environments where every action must be explicitly authorized.
+#
+# Philosophy: DENY EVERYTHING, then whitelist what is needed.
+#
+# This template is intentionally paranoid. It assumes:
+#   - The agent operates in a hostile or high-stakes environment
+#   - Every tool call is potentially dangerous until proven safe
+#   - All outputs may be leaked and must be sanitized
+#   - All inputs may contain injection attempts
+#   - No network access unless explicitly approved
+#   - No file access unless explicitly approved
+#
+# Start here and selectively relax controls. It is easier to open a locked
+# door than to lock one that was left open.
+#
+# Usage:
+#   autoharness init --template strict
+#   autoharness validate
+#   autoharness install --target claude-code
+#
+# ============================================================================
+
+version: "1.0"
+
+
+# ----------------------------------------------------------------------------
+# Identity
+# ----------------------------------------------------------------------------
+
+identity:
+  name: maximum-security-agent
+  description: "Maximum security agent — deny-by-default, full audit, all hooks enabled"
+  boundaries:
+    - "DENY by default — every action requires explicit authorization"
+    - "All tool calls require confirmation unless explicitly whitelisted"
+    - "No network access unless domain is explicitly approved"
+    - "No file access outside the project directory"
+    - "All outputs are sanitized for secrets and PII before display"
+    - "Full audit trail of every action, decision, and hook activation"
+    - "Never weaken security settings, skip hooks, or disable verification"
+    - "Never store credentials in plaintext anywhere"
+
+
+# ----------------------------------------------------------------------------
+# Rules — comprehensive security controls
+# ----------------------------------------------------------------------------
+
+rules:
+  # --- Deny Unknown Tools ---
+  - id: deny-unknown-tools
+    description: >
+      Any tool not explicitly configured in the permissions section is
+      denied outright. This prevents exploitation through novel or
+      unexpected tool invocations that bypass configured controls.
+    severity: error
+    enforcement: hook
+
+  # --- Deny Unknown Paths ---
+  - id: deny-unknown-paths
+    description: >
+      File access to paths not matching any configured allow/ask pattern
+      is denied. Prevents information disclosure through path traversal
+      or access to unintended directories.
+    severity: error
+    enforcement: hook
+
+  # --- Confirm All Writes ---
+  - id: confirm-all-file-writes
+    description: >
+      Every file write (Edit, Write) requires explicit user confirmation.
+      No silent file mutations. This ensures the human operator maintains
+      full awareness of all filesystem changes.
+    severity: error
+    enforcement: both
+
+  # --- Confirm All Bash ---
+  - id: confirm-all-bash
+    description: >
+      Every Bash command requires confirmation except a small allowlist
+      of read-only, side-effect-free commands (ls, cat, head, git status).
+      Shell execution is the most powerful tool — treat it accordingly.
+    severity: error
+    enforcement: both
+
+  # --- No Network Access ---
+  - id: deny-network-by-default
+    description: >
+      All network access is denied unless the target domain is explicitly
+      whitelisted. Prevents data exfiltration, supply chain attacks via
+      package managers, and unauthorized API calls.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "curl\\s+|wget\\s+|nc\\s+|ncat\\s+|netcat\\s+|telnet\\s+|ssh\\s+|scp\\s+|rsync\\s+|ftp\\s+"
+      - tool: Bash
+        pattern: "pip\\s+install|npm\\s+install|yarn\\s+add|gem\\s+install|cargo\\s+install|go\\s+get"
+
+  # --- No Secret Exposure ---
+  - id: no-secret-exposure
+    description: >
+      Never commit, log, echo, print, or transmit secrets, API keys,
+      tokens, passwords, or credentials. Enforced by the built-in
+      secret scanner hook which inspects all tool inputs and outputs.
+    severity: error
+    enforcement: hook
+
+  # --- No Security Weakening ---
+  - id: no-security-weakening
+    description: >
+      Block any attempt to disable safety features, skip verification,
+      bypass hooks, weaken encryption, or lower security settings.
+      If an agent can weaken its own controls, the controls are theater.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "--no-verify|--insecure|--skip-hooks|--no-gpg-sign|disable_ssl|SSL_VERIFY=0|verify=False|PYTHONDONTWRITEBYTECODE"
+      - tool: Edit
+        pattern: "verify.*=.*[Ff]alse|ssl.*=.*[Ff]alse|security.*=.*[Ff]alse|UNSAFE"
+
+  # --- No Privilege Escalation ---
+  - id: no-privilege-escalation
+    description: >
+      Block all privilege escalation attempts. An agent should never
+      need root access, and if it does, something is wrong with the
+      deployment architecture.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "sudo\\s+|\\bsu\\s+-|chmod\\s+[0-7]*7[0-7]*\\s+|chown\\s+root|/etc/passwd|/etc/shadow|/etc/sudoers"
+
+  # --- No Destructive Operations ---
+  - id: no-destructive-operations
+    description: >
+      Block all destructive filesystem and git operations. No recursive
+      deletes, no force pushes, no hard resets, no disk formatting.
+      These operations are irreversible and must be performed by a human.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "rm\\s+-rf|rm\\s+-r\\s+/|git\\s+push.*--force|git\\s+reset\\s+--hard|git\\s+clean\\s+-fd|mkfs\\.|dd\\s+if=.*of=/dev/"
+      - tool: Bash
+        pattern: "DROP\\s+DATABASE|DROP\\s+TABLE|TRUNCATE\\s+|DELETE\\s+FROM\\s+.*WHERE\\s+1"
+
+  # --- No Piped Remote Execution ---
+  - id: no-remote-code-execution
+    description: >
+      Block piping remote content directly into a shell interpreter.
+      This is the most common vector for supply chain attacks and
+      arbitrary code execution from untrusted sources.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "curl\\s+.*\\|\\s*(ba)?sh|wget\\s+.*\\|\\s*(ba)?sh|curl\\s+.*\\|\\s*python|wget\\s+.*\\|\\s*python"
+
+  # --- PII Protection ---
+  - id: pii-filter-strict
+    description: >
+      Detect and block PII (SSN, credit cards, phone numbers, email
+      addresses combined with names) in all tool inputs and outputs.
+      Enforced via the PII filter hook in strict mode.
+    severity: error
+    enforcement: hook
+    triggers:
+      # SSN
+      - tool: Bash
+        pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+      # Credit card (basic pattern)
+      - tool: Bash
+        pattern: "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\\b"
+
+  # --- Output Sanitization ---
+  - id: mandatory-output-sanitization
+    description: >
+      All tool outputs are scanned and sanitized before being returned
+      to the agent or displayed to the user. Secrets, PII, and internal
+      system paths are redacted. Even if a tool accidentally returns
+      sensitive data, the output hook catches it.
+    severity: error
+    enforcement: hook
+
+  # --- Config Protection ---
+  - id: config-protection
+    description: >
+      The agent's own configuration files (constitution, .autoharness/,
+      hook configs) are read-only. An agent must not be able to modify
+      the rules that govern it — that would defeat the purpose of
+      governance entirely.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Edit
+        pattern: "\\.autoharness|autoharness\\.ya?ml|constitution\\.ya?ml|\\.claude"
+      - tool: Write
+        pattern: "\\.autoharness|autoharness\\.ya?ml|constitution\\.ya?ml|\\.claude"
+
+  # --- No Self-Modification of Governance ---
+  - id: no-governance-self-modification
+    description: >
+      The agent must never modify its own governance rules, hooks, or
+      permission configurations. This is the meta-rule that protects
+      all other rules. Without this, a sufficiently clever agent could
+      simply rewrite its constitution.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "autoharness.*--disable|autoharness.*uninstall|autoharness.*init.*--force"
+
+
+# ----------------------------------------------------------------------------
+# Permissions — deny everything, whitelist selectively
+# ----------------------------------------------------------------------------
+
+permissions:
+  defaults:
+    # DENY all unknown tools — no exceptions
+    unknown_tool: deny
+    # DENY all unknown paths — no exceptions
+    unknown_path: deny
+    # DENY on any error in permission evaluation
+    on_error: deny
+
+  tools:
+    Bash:
+      policy: restricted
+      deny_patterns:
+        # Catastrophic filesystem operations
+        - "rm\\s+-rf\\s+/"
+        - "rm\\s+-rf\\s+~"
+        - "rm\\s+-rf\\s+\\$HOME"
+        - "mkfs\\."
+        - "dd\\s+if=.*of=/dev/"
+        - ":(){ :|:& };:"
+        # Privilege escalation
+        - "sudo\\s+"
+        - "su\\s+-"
+        - "chmod\\s+-R\\s+777"
+        # Remote code execution
+        - "curl\\s+.*\\|\\s*(ba)?sh"
+        - "wget\\s+.*\\|\\s*(ba)?sh"
+        - "curl\\s+.*\\|\\s*python"
+        # Dangerous git
+        - "git\\s+push\\s+.*--force"
+        - "git\\s+reset\\s+--hard"
+        - "git\\s+clean\\s+-fd"
+        # Security weakening
+        - "--no-verify"
+        - "--insecure"
+        - "--skip-hooks"
+        # Network tools (denied by default)
+        - "curl\\s+"
+        - "wget\\s+"
+        - "nc\\s+"
+        - "ncat\\s+"
+        - "netcat\\s+"
+        - "telnet\\s+"
+        - "ssh\\s+"
+        - "scp\\s+"
+        - "rsync\\s+"
+        - "ftp\\s+"
+        # Package managers (supply chain risk)
+        - "pip\\s+install"
+        - "npm\\s+install"
+        - "yarn\\s+add"
+        - "gem\\s+install"
+      allow_patterns:
+        # Read-only commands that are always safe
+        - "^ls\\s+"
+        - "^pwd$"
+        - "^git\\s+status"
+        - "^git\\s+log"
+        - "^git\\s+diff"
+        - "^git\\s+branch"
+        - "^python\\s+--version"
+        - "^node\\s+--version"
+        - "^which\\s+"
+        - "^type\\s+"
+      ask_patterns:
+        # Everything else requires confirmation
+        - "git\\s+commit"
+        - "git\\s+push"
+        - "git\\s+merge"
+        - "git\\s+rebase"
+        - "python\\s+"
+        - "node\\s+"
+        - "make\\s+"
+        - "docker\\s+"
+
+    Edit:
+      policy: restricted
+      deny_paths:
+        # Credentials and secrets
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+        - "*.p12"
+        - "*.pfx"
+        - "credentials.json"
+        - ".aws/credentials"
+        - ".gcp/credentials"
+        - ".netrc"
+        - "id_rsa"
+        - "id_ed25519"
+        # Governance files (agent must not modify its own rules)
+        - ".autoharness/*"
+        - "autoharness.yaml"
+        - "autoharness.yml"
+        - ".claude/*"
+      ask_paths:
+        # All config changes require confirmation
+        - "*.yaml"
+        - "*.yml"
+        - "*.toml"
+        - "*.ini"
+        - "*.cfg"
+        - "*.conf"
+        - "Dockerfile"
+        - "docker-compose*"
+        - "Makefile"
+        - "*.sh"
+
+    Read:
+      policy: restricted
+      deny_paths:
+        # Never read raw secrets
+        - ".env"
+        - ".env.*"
+        - ".ssh/id_*"
+        - "*.pem"
+        - "*.key"
+        - ".aws/credentials"
+        - ".netrc"
+        - ".pgpass"
+        - "*.p12"
+      ask_paths:
+        # Sensitive data files need justification
+        - "*.csv"
+        - "*.tsv"
+        - "*.parquet"
+        - "*.sql"
+        - "*.db"
+        - "*.sqlite"
+
+    Write:
+      policy: restricted
+      deny_paths:
+        # Same as Edit deny paths
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+        - "*.p12"
+        - "credentials.json"
+        - ".aws/credentials"
+        - ".autoharness/*"
+        - "autoharness.yaml"
+        - ".claude/*"
+      ask_paths:
+        # All writes require confirmation in strict mode
+        - "*"
+
+    # Network tools: deny by default, allow only specific domains
+    WebFetch:
+      policy: restricted
+      allow_domains: []
+      # Add approved domains here, e.g.:
+      # allow_domains:
+      #   - "github.com"
+      #   - "docs.python.org"
+
+
+# ----------------------------------------------------------------------------
+# Risk — maximum paranoia
+# ----------------------------------------------------------------------------
+
+risk:
+  classifier: rules
+  thresholds:
+    low: allow         # Only truly safe operations proceed automatically
+    medium: ask        # Everything else requires human confirmation
+    high: deny         # High risk: blocked outright
+    critical: deny     # Critical risk: blocked outright
+
+
+# ----------------------------------------------------------------------------
+# Hooks — strict profile, all hooks active
+# ----------------------------------------------------------------------------
+# Strict profile enables every built-in hook:
+#   - Pre-execution:  secret scanner, PII filter, path guard, config protection
+#   - Post-execution: output sanitization, secret redaction, PII scrubbing
+#
+# This is the maximum governance level. Every tool call passes through the
+# full hook pipeline before and after execution.
+
+hooks:
+  profile: strict
+
+
+# ----------------------------------------------------------------------------
+# Audit — comprehensive, everything logged
+# ----------------------------------------------------------------------------
+# In strict mode, every single governance event is recorded. This creates a
+# complete audit trail suitable for the most demanding compliance requirements.
+# Retention is set to maximum (10 years) for forensic investigation support.
+
+audit:
+  enabled: true
+  format: jsonl
+  output: .autoharness/audit.jsonl
+  retention_days: 3650    # 10 years — maximum retention for forensics
+  include:
+    - tool_call           # Every execution logged
+    - tool_blocked        # Every denial logged with full context
+    - tool_error          # Every error captured
+    - hook_fired          # Every hook activation recorded
+    - permission_check    # Every authorization decision documented

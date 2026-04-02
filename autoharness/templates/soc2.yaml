@@ -1,0 +1,301 @@
+# ============================================================================
+# AutoHarness Constitution — SOC2 Type II Compliance Template
+# ============================================================================
+#
+# This template enforces controls required for SOC2 Type II certification.
+# Each rule is annotated with the Trust Services Criteria (TSC) it maps to.
+#
+# SOC2 Trust Services Categories:
+#   CC — Common Criteria (Security)
+#   A  — Availability
+#   PI — Processing Integrity
+#   C  — Confidentiality
+#   P  — Privacy
+#
+# Usage:
+#   autoharness init --template soc2
+#   autoharness validate
+#   autoharness install --target claude-code
+#
+# ============================================================================
+
+version: "1.0"
+
+
+# ----------------------------------------------------------------------------
+# Identity
+# ----------------------------------------------------------------------------
+
+identity:
+  name: soc2-compliant-agent
+  description: "SOC2 Type II compliant AI agent — all actions audited, least privilege enforced"
+  boundaries:
+    - "All actions must produce an audit trail (CC7.2)"
+    - "No data may leave the organizational boundary without authorization (C1.1)"
+    - "Principle of least privilege — deny by default (CC6.1)"
+    - "All changes require documented approval (CC8.1)"
+    - "Agents must not approve their own work — separation of duties (CC5.1)"
+    - "Never store, transmit, or log credentials in plaintext (CC6.1)"
+
+
+# ----------------------------------------------------------------------------
+# Rules — mapped to SOC2 Trust Services Criteria
+# ----------------------------------------------------------------------------
+
+rules:
+  # --- CC6.1: Logical and Physical Access Controls ---
+  - id: least-privilege-access
+    description: >
+      Enforce principle of least privilege. Unknown tools are denied, not
+      prompted. This prevents privilege escalation through novel tool discovery.
+      Maps to CC6.1 — restrict access to authorized users/processes only.
+    severity: error
+    enforcement: hook
+
+  - id: no-unauthorized-data-access
+    description: >
+      Block access to credential stores, config files, and secrets.
+      CC6.1 — protect information assets from unauthorized access.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "cat\\s+.*/\\.env|cat\\s+.*credentials|cat\\s+.*\\.pem|cat\\s+.*\\.key|cat\\s+.*secret"
+      - tool: Bash
+        pattern: "printenv|env\\s*$|set\\s*$|export\\s+-p"
+
+  # --- CC7.2: System Monitoring ---
+  - id: audit-all-actions
+    description: >
+      Every tool invocation must be logged with timestamp, session ID, tool
+      name, input hash, and outcome. CC7.2 — monitor system components for
+      anomalies and deviations from policy.
+    severity: error
+    enforcement: hook
+
+  # --- CC8.1: Change Management ---
+  - id: enforce-change-management
+    description: >
+      All file writes and git operations require explicit confirmation.
+      CC8.1 — authorize, design, develop, configure, document, test, approve,
+      and implement changes. No silent mutations allowed.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "git\\s+push|git\\s+commit|git\\s+merge|git\\s+rebase"
+
+  - id: confirm-all-writes
+    description: >
+      File creation and modification must be confirmed before execution.
+      CC8.1 — changes are authorized and approved before implementation.
+    severity: error
+    enforcement: both
+
+  # --- CC5.1: Separation of Duties ---
+  - id: no-self-review
+    description: >
+      Agents must not approve, merge, or review their own changes.
+      CC5.1 — segregation of duties to prevent a single actor from
+      circumventing controls. Agent-generated code requires human review.
+    severity: error
+    enforcement: both
+    triggers:
+      - tool: Bash
+        pattern: "gh\\s+pr\\s+merge|gh\\s+pr\\s+review\\s+--approve"
+
+  # --- CC6.7: Data Transmission Controls ---
+  - id: no-external-data-exfiltration
+    description: >
+      Block network calls that could exfiltrate data outside the org boundary.
+      CC6.7 — restrict transmission of data to authorized external parties.
+      Denies curl, wget, and similar unless targeting approved domains.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "curl\\s+|wget\\s+|nc\\s+|ncat\\s+|netcat\\s+|scp\\s+|rsync\\s+.*:"
+
+  # --- CC6.1: Credential Protection ---
+  - id: no-secret-exposure
+    description: >
+      Never commit, log, print, or transmit secrets, API keys, tokens, or
+      credentials. CC6.1 — protect information assets and encryption keys.
+    severity: error
+    enforcement: hook
+
+  # --- CC7.1: Incident Detection ---
+  - id: log-all-blocks-with-reason
+    description: >
+      Every blocked action must be logged with a human-readable reason,
+      the rule that triggered the block, and the full tool call context.
+      CC7.1 — detect and report on anomalies in a timely manner.
+    severity: error
+    enforcement: hook
+
+  # --- P1.1: PII / Data Classification ---
+  - id: pii-protection
+    description: >
+      Detect and prevent exposure of Personally Identifiable Information
+      (PII) including SSNs, email addresses, phone numbers, and names
+      combined with identifiers. P1.1 — privacy criteria for personal
+      information. Enforced via the PII filter hook.
+    severity: error
+    enforcement: hook
+
+  # --- CC6.3: Role-Based Access ---
+  - id: no-privilege-escalation
+    description: >
+      Block attempts to escalate privileges — sudo, su, chmod 777,
+      chown root, or modifying /etc/passwd and /etc/sudoers.
+      CC6.3 — authorize access based on appropriate levels of authority.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "sudo\\s+|\\bsu\\s+|chmod\\s+777|chown\\s+root|/etc/passwd|/etc/sudoers"
+
+
+# ----------------------------------------------------------------------------
+# Permissions — least privilege, deny by default (CC6.1)
+# ----------------------------------------------------------------------------
+
+permissions:
+  defaults:
+    # CC6.1: deny anything not explicitly permitted
+    unknown_tool: deny
+    # CC6.1: deny access to paths not explicitly allowed
+    unknown_path: deny
+    # Fail-safe: deny on error
+    on_error: deny
+
+  tools:
+    Bash:
+      policy: restricted
+      deny_patterns:
+        # CC6.1: catastrophic/irreversible operations
+        - "rm\\s+-rf\\s+/"
+        - "rm\\s+-rf\\s+~"
+        - "mkfs\\."
+        - "dd\\s+if=.*of=/dev/"
+        - ":(){ :|:& };:"
+        # CC6.7: block unauthorized outbound network
+        - "curl\\s+.*\\|\\s*(ba)?sh"
+        - "wget\\s+.*\\|\\s*(ba)?sh"
+        # CC8.1: dangerous git operations require change management
+        - "git\\s+push\\s+.*--force"
+        - "git\\s+reset\\s+--hard"
+        # CC6.3: privilege escalation
+        - "sudo\\s+"
+        - "chmod\\s+-R\\s+777"
+      ask_patterns:
+        # CC8.1: all state-changing git ops require confirmation
+        - "git\\s+push"
+        - "git\\s+commit"
+        - "git\\s+merge"
+        - "git\\s+rebase"
+        # CC6.7: outbound network requires approval
+        - "curl\\s+"
+        - "wget\\s+"
+        - "pip\\s+install"
+        - "npm\\s+install"
+
+    Edit:
+      policy: restricted
+      deny_paths:
+        # CC6.1: credential and config files
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+        - "credentials.json"
+        - ".aws/credentials"
+        - ".gcp/credentials"
+        - ".netrc"
+        - "id_rsa"
+        - "id_ed25519"
+        - "*.p12"
+        - "*.pfx"
+      ask_paths:
+        # CC8.1: config changes require review
+        - "*.yaml"
+        - "*.yml"
+        - "*.toml"
+        - "*.ini"
+        - "*.cfg"
+        - "Dockerfile"
+        - "docker-compose*"
+
+    Read:
+      policy: restricted
+      deny_paths:
+        # CC6.1: never read raw secrets
+        - ".env"
+        - ".env.*"
+        - ".ssh/id_*"
+        - "*.pem"
+        - "*.key"
+        - ".aws/credentials"
+        - ".netrc"
+
+    Write:
+      policy: restricted
+      deny_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+        - "credentials.json"
+
+    # CC6.7: web fetch restricted to approved domains only
+    WebFetch:
+      policy: restricted
+      allow_domains:
+        - "github.com"
+        - "docs.python.org"
+        - "stackoverflow.com"
+
+
+# ----------------------------------------------------------------------------
+# Risk — conservative classification (CC7.1, CC7.2)
+# ----------------------------------------------------------------------------
+
+risk:
+  classifier: rules
+  thresholds:
+    low: allow
+    medium: ask        # SOC2 requires human review for medium-risk actions
+    high: deny
+    critical: deny
+
+
+# ----------------------------------------------------------------------------
+# Hooks — strict profile, all hooks active (CC7.2)
+# ----------------------------------------------------------------------------
+
+hooks:
+  profile: strict
+  # All built-in hooks enabled: secret scanner, PII filter, path guard,
+  # output sanitization, config protection. Strict profile ensures maximum
+  # governance coverage as required by SOC2 audit controls.
+
+
+# ----------------------------------------------------------------------------
+# Audit — comprehensive logging (CC7.1, CC7.2, CC7.3)
+# ----------------------------------------------------------------------------
+# SOC2 requires complete audit trails. Every event type is logged.
+# Retention set to 365 days to cover the Type II observation period.
+
+audit:
+  enabled: true
+  format: jsonl
+  output: .autoharness/audit.jsonl
+  retention_days: 365
+  include:
+    - tool_call           # CC7.2: all executions logged
+    - tool_blocked        # CC7.1: all denials logged with reason
+    - tool_error          # CC7.1: all errors captured
+    - hook_fired          # CC7.2: all hook activations tracked
+    - permission_check    # CC7.2: all permission evaluations recorded

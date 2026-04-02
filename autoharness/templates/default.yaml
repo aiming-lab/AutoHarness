@@ -1,0 +1,246 @@
+# ============================================================================
+# AutoHarness Constitution — Default Template
+# ============================================================================
+#
+# This file defines the behavioral governance rules for your AI agent.
+# Think of it as a "constitution" — the fundamental laws your agent must follow.
+#
+# Documentation: https://github.com/aiming-lab/AutoHarness
+#
+# Quick start:
+#   1. Customize the identity section with your project name
+#   2. Review the rules — enable/disable as needed
+#   3. Adjust permissions for your specific tools
+#   4. Run `autoharness validate` to check this file
+#   5. Run `autoharness install --target claude-code` to activate
+#
+# ============================================================================
+
+version: "1.0"
+
+
+# ----------------------------------------------------------------------------
+# Identity — who is this constitution for?
+# ----------------------------------------------------------------------------
+# The identity section describes your project and defines high-level
+# behavioral boundaries. These boundaries are injected into the agent's
+# system prompt so it understands its operating context.
+
+identity:
+  name: my-project
+  description: "AI agent governance for my project"
+  boundaries:
+    - "Only modify files within the project directory"
+    - "Ask before performing destructive operations"
+    - "Never expose secrets or credentials"
+
+
+# ----------------------------------------------------------------------------
+# Rules — what behaviors to enforce
+# ----------------------------------------------------------------------------
+# Each rule has:
+#   id:           Unique identifier (kebab-case)
+#   description:  Human-readable explanation
+#   severity:     info | warning | error
+#   enforcement:  prompt (guidance only) | hook (programmatic) | both
+#   triggers:     Optional — tool + pattern combinations that activate the rule
+#
+# Severity determines what happens on violation:
+#   info    → logged only
+#   warning → logged + user notified
+#   error   → logged + action blocked
+
+rules:
+  # --- Quality ---
+  - id: no-over-engineering
+    description: "Prefer simple, minimal solutions over complex abstractions"
+    severity: warning
+    enforcement: prompt
+    # This rule is prompt-only: it guides the agent but doesn't block actions.
+    # The agent sees this in its system prompt and should follow it.
+
+  # --- Safety ---
+  - id: confirm-destructive-ops
+    description: >
+      Destructive operations (delete, drop, reset --hard, push --force)
+      must be confirmed before execution
+    severity: error
+    enforcement: hook
+    triggers:
+      # Each trigger watches a specific tool for dangerous patterns.
+      # When matched, the action is blocked.
+      - tool: Bash
+        pattern: "rm\\s+-rf|git\\s+push.*--force|git\\s+reset\\s+--hard|DROP\\s+TABLE|DROP\\s+DATABASE"
+
+  - id: no-config-weakening
+    description: >
+      Do not disable safety features, skip hooks, or weaken security settings
+      (e.g., --no-verify, --insecure, disable_ssl)
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "--no-verify|--insecure|disable_ssl|--skip-hooks|--no-gpg-sign"
+
+  # --- Security ---
+  - id: no-secret-exposure
+    description: "Never commit, log, or transmit secrets, API keys, or credentials"
+    severity: error
+    enforcement: hook
+    # This rule is enforced by the built-in secret scanner, which checks
+    # tool inputs and outputs against common secret patterns (API keys,
+    # tokens, passwords, etc.). No trigger pattern needed — it's automatic.
+
+  - id: sensitive-path-guard
+    description: "Warn before reading or modifying sensitive paths"
+    severity: warning
+    enforcement: both
+    # Enforced via both prompt guidance and the permission system below.
+    # Sensitive paths are defined in the permissions.tools section.
+
+
+# ----------------------------------------------------------------------------
+# Permissions — what tools can do
+# ----------------------------------------------------------------------------
+# The permissions section controls tool access at a granular level.
+#
+# defaults:  What happens when no specific rule matches
+# tools:     Per-tool configuration with pattern-based access control
+#
+# Policies:
+#   allow      — tool can run freely
+#   restricted — tool can run, but certain patterns are blocked or require confirmation
+#   deny       — tool is completely blocked
+#
+# Pattern types:
+#   deny_patterns  — regex patterns that block the tool call
+#   ask_patterns   — regex patterns that require user confirmation
+#   allow_patterns — regex patterns that are always allowed (override ask)
+#   deny_paths     — filesystem paths that block the tool call
+#   ask_paths      — filesystem paths that require user confirmation
+
+permissions:
+  defaults:
+    # What to do with tools not listed below
+    unknown_tool: ask       # ask | allow | deny
+    # What to do with paths not matching any pattern
+    unknown_path: deny      # ask | allow | deny
+    # What to do when permission evaluation itself fails
+    on_error: deny          # always fail-safe
+
+  tools:
+    # --- Shell execution ---
+    Bash:
+      policy: restricted
+      deny_patterns:
+        # Catastrophic filesystem operations
+        - "rm\\s+-rf\\s+/"
+        - "rm\\s+-rf\\s+~"
+        - "rm\\s+-rf\\s+\\$HOME"
+        - "mkfs\\."
+        - "dd\\s+if=.*of=/dev/"
+        # Fork bomb
+        - ":\\(\\)\\s*\\{\\s*:\\|:\\s*&\\s*\\}\\s*;"
+        # Overly permissive chmod
+        - "chmod\\s+-R\\s+777\\s+/"
+        # Piped remote execution (curl | sh)
+        - "curl\\s+.*\\|\\s*(ba)?sh"
+        - "wget\\s+.*\\|\\s*(ba)?sh"
+        # Dangerous git operations on main/master
+        - "git\\s+push\\s+.*--force\\s+.*(main|master)"
+        - "git\\s+reset\\s+--hard"
+
+    # --- File editing ---
+    Edit:
+      policy: restricted
+      deny_paths:
+        # Environment files with secrets
+        - ".env"
+        - ".env.*"
+        # SSH keys and config
+        - ".ssh/*"
+        # Credentials and keys
+        - "credentials.json"
+        - ".aws/credentials"
+        - ".netrc"
+        - "id_rsa"
+        - "*.pem"
+        - "*.key"
+
+    # --- File reading ---
+    # Reading is generally safe, but you can restrict sensitive paths
+    Read:
+      policy: allow
+      ask_paths:
+        - ".env"
+        - ".ssh/*"
+        - "*.pem"
+
+    # --- File writing (full overwrites) ---
+    Write:
+      policy: restricted
+      deny_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+
+
+# ----------------------------------------------------------------------------
+# Risk — how to classify and respond to risk levels
+# ----------------------------------------------------------------------------
+# The risk classifier evaluates each tool call and assigns a risk level.
+# Thresholds determine what action to take at each level.
+#
+# Classifiers:
+#   rules  — deterministic pattern matching (fast, predictable)
+#   llm    — LLM-based assessment (flexible, slower)
+#   hybrid — rules first, LLM for ambiguous cases
+
+risk:
+  classifier: rules
+  thresholds:
+    low: allow          # Low risk → proceed automatically
+    medium: allow       # Medium risk → proceed (change to "ask" for stricter)
+    high: deny          # High risk → block
+    critical: deny      # Critical risk → block
+  # custom_rules: []    # Add custom risk patterns (advanced)
+
+
+# ----------------------------------------------------------------------------
+# Hooks — lifecycle callbacks
+# ----------------------------------------------------------------------------
+# Hooks run at specific points in the tool call lifecycle:
+#   pre:  before the tool executes (can block or modify)
+#   post: after the tool executes (can sanitize output)
+#
+# Profiles control which built-in hooks are active:
+#   minimal  — only critical safety hooks
+#   standard — safety + common governance hooks (recommended)
+#   strict   — all hooks enabled, maximum governance
+
+hooks:
+  profile: standard
+  # pre: []     # Additional pre-execution hooks (advanced)
+  # post: []    # Additional post-execution hooks (advanced)
+
+
+# ----------------------------------------------------------------------------
+# Audit — logging and compliance
+# ----------------------------------------------------------------------------
+# Every governance decision is logged for transparency and compliance.
+# Records are stored as JSONL (one JSON object per line) for easy
+# streaming, rotation, and analysis.
+
+audit:
+  enabled: true
+  format: jsonl
+  output: .autoharness/audit.jsonl
+  retention_days: 90
+  include:
+    - tool_call           # Allowed tool executions
+    - tool_blocked        # Blocked tool calls
+    - tool_error          # Errors during governance
+    - hook_fired          # Hook activations
+    - permission_check    # Permission evaluations

@@ -1,0 +1,336 @@
+# ============================================================================
+# AutoHarness Constitution — HIPAA Compliance Template
+# ============================================================================
+#
+# This template enforces controls required by the Health Insurance Portability
+# and Accountability Act (HIPAA) for AI agents operating in healthcare
+# environments. Every rule maps to specific HIPAA sections.
+#
+# Key HIPAA Rules Covered:
+#   §164.308 — Administrative Safeguards
+#   §164.310 — Physical Safeguards
+#   §164.312 — Technical Safeguards
+#   §164.314 — Organizational Requirements (BAA awareness)
+#   §164.502 — Minimum Necessary Standard
+#
+# PHI = Protected Health Information (18 HIPAA identifiers)
+# ePHI = Electronic Protected Health Information
+#
+# Usage:
+#   autoharness init --template hipaa
+#   autoharness validate
+#   autoharness install --target claude-code
+#
+# ============================================================================
+
+version: "1.0"
+
+
+# ----------------------------------------------------------------------------
+# Identity
+# ----------------------------------------------------------------------------
+
+identity:
+  name: hipaa-compliant-agent
+  description: "HIPAA-compliant AI agent — PHI protection, minimum necessary access, full audit trail"
+  boundaries:
+    - "Never access more PHI than necessary for the current task (§164.502 Minimum Necessary)"
+    - "Never output, log, or store PHI in plaintext outside authorized systems (§164.312(a)(1))"
+    - "All PHI access must be audited with timestamp and purpose (§164.312(b))"
+    - "Encrypt PHI at rest and in transit — no plaintext credential storage (§164.312(a)(2)(iv))"
+    - "Report any suspected PHI breach immediately (§164.308(a)(6))"
+    - "Operate within Business Associate Agreement scope (§164.314)"
+
+
+# ----------------------------------------------------------------------------
+# Rules — mapped to HIPAA sections
+# ----------------------------------------------------------------------------
+
+rules:
+  # --- §164.312(b): Audit Controls ---
+  - id: audit-all-phi-access
+    description: >
+      Every access to data that may contain PHI must be logged with the
+      requesting session, tool, timestamp, and stated purpose. §164.312(b)
+      requires hardware, software, and procedural mechanisms to record
+      and examine activity in systems containing ePHI.
+    severity: error
+    enforcement: hook
+
+  # --- §164.502: Minimum Necessary Standard ---
+  - id: minimum-necessary-access
+    description: >
+      Agents must access only the minimum data necessary for the task.
+      Broad data queries (SELECT *, bulk file reads of patient directories)
+      are blocked. §164.502(b) — covered entities must limit PHI
+      disclosures to the minimum necessary.
+    severity: error
+    enforcement: both
+    triggers:
+      - tool: Bash
+        pattern: "SELECT\\s+\\*\\s+FROM\\s+(patient|medical|health|claim|diagnosis|prescription)"
+      - tool: Bash
+        pattern: "cat\\s+.*patient|cat\\s+.*medical|head\\s+-n\\s+\\d+.*patient"
+
+  # --- §164.312(a)(1): Access Control ---
+  - id: phi-access-control
+    description: >
+      Restrict access to systems and files containing ePHI.
+      §164.312(a)(1) — implement technical policies and procedures for
+      electronic information systems that maintain ePHI to allow access
+      only to authorized persons or processes.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "cat\\s+.*\\.hl7|cat\\s+.*\\.fhir|cat\\s+.*\\.ccda|cat\\s+.*\\.dicom"
+
+  # --- §164.312(a)(2)(iv): Encryption and Decryption ---
+  - id: no-plaintext-credentials
+    description: >
+      Never store credentials, keys, or PHI access tokens in plaintext.
+      §164.312(a)(2)(iv) — implement a mechanism to encrypt and decrypt ePHI.
+      Blocks writing secrets to unencrypted files.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "echo\\s+.*password.*>>|echo\\s+.*token.*>>|echo\\s+.*secret.*>>"
+      - tool: Edit
+        pattern: "password\\s*=\\s*['\"][^'\"]+['\"]|api_key\\s*=\\s*['\"][^'\"]+['\"]"
+
+  # --- §164.312(e)(1): Transmission Security ---
+  - id: encrypt-data-in-transit
+    description: >
+      All network transmissions involving potential PHI must use encryption.
+      §164.312(e)(1) — implement technical security measures to guard against
+      unauthorized access to ePHI transmitted over electronic communications.
+      Block unencrypted protocols (HTTP, FTP, telnet).
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "curl\\s+http://|wget\\s+http://|ftp\\s+|telnet\\s+"
+
+  # --- §164.530(c): Safeguards / No PHI in Logs ---
+  - id: no-phi-in-output
+    description: >
+      PHI must never appear in agent output, logs, error messages, or
+      debug traces. §164.530(c) — covered entities must have safeguards
+      to prevent impermissible use or disclosure. Enforced via PII filter
+      hook in strict mode with healthcare-specific patterns.
+    severity: error
+    enforcement: hook
+
+  # --- PHI Pattern Detection (18 HIPAA Identifiers) ---
+  - id: phi-pattern-detection
+    description: >
+      Detect and block common PHI patterns in tool inputs and outputs.
+      Covers key HIPAA identifiers: SSN, Medical Record Numbers (MRN),
+      health plan beneficiary numbers, and dates combined with names.
+      §164.514(b) — de-identification safe harbor method.
+    severity: error
+    enforcement: hook
+    triggers:
+      # SSN pattern (XXX-XX-XXXX)
+      - tool: Bash
+        pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+      # Medical Record Number patterns (common formats)
+      - tool: Bash
+        pattern: "\\bMRN[:\\s]*\\d{6,}\\b"
+      # Health plan ID
+      - tool: Bash
+        pattern: "\\bHICN[:\\s]*[A-Z0-9]{9,}\\b"
+
+  # --- §164.308(a)(1): Security Management ---
+  - id: no-security-weakening
+    description: >
+      Do not disable security features, skip verification, or weaken
+      encryption settings. §164.308(a)(1)(ii)(A) — risk analysis must
+      identify and mitigate risks; weakening controls is a violation.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "--no-verify|--insecure|disable_ssl|--skip-hooks|verify=False|SSL_VERIFY=0"
+
+  # --- §164.308(a)(6): Security Incident Procedures ---
+  - id: report-suspected-breach
+    description: >
+      Any blocked PHI access attempt or anomalous data access pattern
+      must be logged as a potential security incident. §164.308(a)(6) —
+      implement policies to address security incidents.
+    severity: error
+    enforcement: hook
+
+  # --- §164.308(a)(4): Information Access Management ---
+  - id: role-based-access
+    description: >
+      Access to PHI-containing systems must be role-appropriate.
+      Agents should not access administrative healthcare databases,
+      billing systems, or EHR backends unless explicitly authorized.
+      §164.308(a)(4) — authorize access consistent with job function.
+    severity: error
+    enforcement: both
+    triggers:
+      - tool: Bash
+        pattern: "psql\\s+.*health|mysql\\s+.*patient|mongo\\s+.*ehr|redis-cli\\s+.*phi"
+
+  # --- §164.312(d): Person or Entity Authentication ---
+  - id: no-credential-sharing
+    description: >
+      Never extract, copy, or transmit authentication credentials for
+      healthcare systems. Each access must use the agent's own authorized
+      identity. §164.312(d) — verify the identity of persons seeking
+      access to ePHI.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "cat\\s+.*\\.pgpass|cat\\s+.*\\.my\\.cnf|cat\\s+.*database\\.yml"
+
+
+# ----------------------------------------------------------------------------
+# Permissions — minimum necessary, deny by default (§164.502)
+# ----------------------------------------------------------------------------
+
+permissions:
+  defaults:
+    # §164.502: minimum necessary — deny unknown tools
+    unknown_tool: deny
+    # §164.312(a)(1): deny access to unknown paths
+    unknown_path: deny
+    # Fail-safe: deny on error
+    on_error: deny
+
+  tools:
+    Bash:
+      policy: restricted
+      deny_patterns:
+        # §164.312(a)(1): catastrophic operations
+        - "rm\\s+-rf\\s+/"
+        - "rm\\s+-rf\\s+~"
+        - "mkfs\\."
+        - "dd\\s+if=.*of=/dev/"
+        # §164.312(e)(1): unencrypted data transfer
+        - "curl\\s+http://.*patient"
+        - "curl\\s+http://.*health"
+        - "curl\\s+.*\\|\\s*(ba)?sh"
+        # §164.312(d): credential theft
+        - "sudo\\s+"
+        - "su\\s+-"
+        # §164.308(a)(1): security weakening
+        - "--no-verify"
+        - "--insecure"
+        # §164.502: bulk PHI access
+        - "mysqldump\\s+.*patient"
+        - "pg_dump\\s+.*health"
+      ask_patterns:
+        # §164.502: any database query needs justification
+        - "psql\\s+"
+        - "mysql\\s+"
+        - "mongo\\s+"
+        # §164.312(b): network access audited
+        - "curl\\s+"
+        - "wget\\s+"
+        # §164.308(a)(1): package installation
+        - "pip\\s+install"
+        - "npm\\s+install"
+
+    Edit:
+      policy: restricted
+      deny_paths:
+        # §164.312(a)(2)(iv): credential files
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+        - "credentials.json"
+        - ".aws/credentials"
+        - ".netrc"
+        - ".pgpass"
+        - ".my.cnf"
+        - "database.yml"
+      ask_paths:
+        # §164.308(a)(1): config changes require review
+        - "*.yaml"
+        - "*.yml"
+        - "*.toml"
+        - "*.conf"
+
+    Read:
+      policy: restricted
+      deny_paths:
+        # §164.312(a)(1): never read raw credentials
+        - ".env"
+        - ".env.*"
+        - ".ssh/id_*"
+        - "*.pem"
+        - "*.key"
+        - ".aws/credentials"
+        - ".pgpass"
+      ask_paths:
+        # §164.502: PHI data files need justification
+        - "*.hl7"
+        - "*.fhir"
+        - "*.ccda"
+        - "*.csv"
+        - "*.tsv"
+
+    Write:
+      policy: restricted
+      deny_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+        - "credentials.json"
+
+
+# ----------------------------------------------------------------------------
+# Risk — strict classification (§164.308(a)(1)(ii)(A))
+# ----------------------------------------------------------------------------
+
+risk:
+  classifier: rules
+  thresholds:
+    low: allow
+    medium: ask        # HIPAA: human review for anything non-trivial
+    high: deny
+    critical: deny
+
+
+# ----------------------------------------------------------------------------
+# Hooks — strict profile with PII filter (§164.530(c))
+# ----------------------------------------------------------------------------
+# Strict profile enables all built-in hooks including:
+#   - Secret scanner: prevents credential exposure
+#   - PII filter: detects and blocks PHI patterns (SSN, MRN, DOB+name combos)
+#   - Output sanitization: scrubs PHI from agent responses
+#   - Path guard: enforces filesystem access controls
+#   - Config protection: prevents security setting modifications
+
+hooks:
+  profile: strict
+
+
+# ----------------------------------------------------------------------------
+# Audit — comprehensive PHI access logging (§164.312(b))
+# ----------------------------------------------------------------------------
+# HIPAA requires 6-year retention of security documentation (§164.530(j)).
+# Audit logs must capture all access to systems containing ePHI.
+# Every event type is logged to support breach investigation and compliance.
+
+audit:
+  enabled: true
+  format: jsonl
+  output: .autoharness/audit.jsonl
+  retention_days: 2190    # 6 years per HIPAA §164.530(j)
+  include:
+    - tool_call           # §164.312(b): all access logged
+    - tool_blocked        # §164.308(a)(6): security incidents captured
+    - tool_error          # §164.312(b): errors recorded
+    - hook_fired          # §164.312(b): all safeguard activations tracked
+    - permission_check    # §164.312(b): all authorization decisions logged

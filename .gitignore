@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# AutoHarness
+.autoharness/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+venv/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+audit.jsonl
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Internal working documents — DO NOT commit
+ROADMAP_*.md
+REDEFINE_*.md
+IMPROVEMENT_PLAN_*.md
+NAMING_RESEARCH.md
+PROJECT.md
+PROJECT_V2.md
+CLAUDE_CODE_ENGINEERING_BIBLE.md
+unified_inbox.json
+CHANGELOG.md
+PLAN_THREE_TIER.md
+
+# Bug feedback (external tester reports)
+Bug_feedback/
+BUG_FIX_TRACKER.md

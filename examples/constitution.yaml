@@ -1,0 +1,270 @@
+# ============================================================================
+# AutoHarness Constitution — Code Assistant Agent
+# ============================================================================
+#
+# A real-world constitution for an AI coding assistant working on a
+# Python/TypeScript web application. Copy this file to your project root
+# and customize for your team's needs.
+#
+# Quick start:
+#   cp examples/constitution.yaml ./constitution.yaml
+#   # Edit to match your project
+#   autoharness validate
+#   autoharness install claude-code
+#
+# AutoHarness auto-discovers this file if named constitution.yaml or
+# autoharness.yaml in the project root or .autoharness/ directory.
+# ============================================================================
+
+version: "1.0"
+
+
+# ----------------------------------------------------------------------------
+# Identity — describes this agent and its operating context
+# ----------------------------------------------------------------------------
+# Boundaries are injected into the LLM's system prompt so the agent
+# understands its role and constraints before it starts making tool calls.
+
+identity:
+  name: code-assistant
+  description: >
+    AI coding assistant for a Python/TypeScript web application.
+    Operates within a single repository. Should write clean, tested,
+    production-quality code.
+  boundaries:
+    - "Only modify files within the project repository"
+    - "Ask before performing any destructive operation"
+    - "Never expose secrets, API keys, or credentials in code or logs"
+    - "Prefer editing existing files over creating new ones"
+    - "Run tests after making changes to verify nothing is broken"
+
+
+# ----------------------------------------------------------------------------
+# Rules — behavioral constraints enforced at runtime
+# ----------------------------------------------------------------------------
+# severity: info (log only) | warning (log + notify) | error (log + block)
+# enforcement: prompt (guidance) | hook (programmatic) | both
+
+rules:
+  # --- Code Quality ---
+
+  - id: no-over-engineering
+    description: >
+      Prefer simple, minimal solutions. Do not introduce abstractions,
+      design patterns, or dependencies unless they solve a concrete problem.
+      YAGNI: You Aren't Gonna Need It.
+    severity: warning
+    enforcement: prompt
+    # Prompt-only: guides the agent's thinking but cannot be mechanically enforced.
+
+  - id: no-todo-without-issue
+    description: >
+      Do not leave TODO/FIXME/HACK comments without linking to a tracking
+      issue. If a workaround is needed, create an issue first.
+    severity: warning
+    enforcement: prompt
+
+  # --- Safety ---
+
+  - id: confirm-destructive-ops
+    description: >
+      Destructive operations must be confirmed before execution:
+      file deletion, database drops, git force-push, git reset --hard,
+      and any operation that cannot be undone.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "rm\\s+-rf|git\\s+push.*--force|git\\s+reset\\s+--hard|DROP\\s+TABLE|DROP\\s+DATABASE|TRUNCATE"
+
+  - id: no-config-weakening
+    description: >
+      Never disable linters, skip pre-commit hooks, bypass security checks,
+      or weaken configuration to make code pass. Fix the code instead.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "--no-verify|--no-gpg-sign|--skip-hooks"
+      - tool: Edit
+        # Patterns like "noqa", "eslint-disable" added to source code
+        pattern: "# noqa|// eslint-disable|@ts-ignore|@ts-expect-error"
+
+  # --- Security ---
+
+  - id: no-secret-exposure
+    description: >
+      Never commit, log, print, or include secrets, API keys, tokens,
+      passwords, or credentials in any tool call. Use environment variables
+      and .env files (which must be gitignored).
+    severity: error
+    enforcement: hook
+    # Enforced by the built-in secret scanner — no trigger pattern needed.
+    # The scanner checks all tool inputs and outputs against patterns for:
+    # AWS keys, GitHub tokens, OpenAI keys, Stripe keys, JWTs, private keys, etc.
+
+  - id: no-sensitive-file-commit
+    description: >
+      Never commit sensitive files: .env, .env.*, credentials.json,
+      *.pem, *.key, id_rsa, .aws/credentials, .netrc
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "git\\s+add.*\\.env|git\\s+add.*credentials|git\\s+add.*\\.pem|git\\s+add.*\\.key"
+
+  # --- Git Workflow ---
+
+  - id: no-force-push-main
+    description: >
+      Never force-push to main or master. This destroys history and
+      disrupts the entire team. Use a feature branch and PR instead.
+    severity: error
+    enforcement: hook
+    triggers:
+      - tool: Bash
+        pattern: "git\\s+push\\s+.*--force\\s+.*(main|master)"
+
+  - id: new-commits-over-amend
+    description: >
+      Prefer creating new commits over amending existing ones, unless
+      explicitly asked. Amending can lose work if the previous commit
+      contained important changes.
+    severity: warning
+    enforcement: prompt
+
+
+# ----------------------------------------------------------------------------
+# Permissions — granular tool access control
+# ----------------------------------------------------------------------------
+
+permissions:
+  defaults:
+    unknown_tool: ask     # Unknown tools require confirmation
+    unknown_path: deny    # Unknown paths are blocked by default
+    on_error: deny        # Fail-safe: block on evaluation errors
+
+  tools:
+    # --- Shell ---
+    Bash:
+      policy: restricted
+      deny_patterns:
+        # Filesystem destruction
+        - "rm\\s+-rf\\s+/"
+        - "rm\\s+-rf\\s+~"
+        - "rm\\s+-rf\\s+\\$HOME"
+        - "mkfs\\."
+        - "dd\\s+if=.*of=/dev/"
+        # Fork bomb
+        - ":\\(\\)\\s*\\{\\s*:\\|:\\s*&\\s*\\}\\s*;"
+        # Dangerous permissions
+        - "chmod\\s+-R\\s+777\\s+/"
+        # Piped remote code execution
+        - "curl\\s+.*\\|\\s*(ba)?sh"
+        - "wget\\s+.*\\|\\s*(ba)?sh"
+        # Dangerous git on protected branches
+        - "git\\s+push\\s+.*--force\\s+.*(main|master)"
+        - "git\\s+reset\\s+--hard"
+
+    # --- File Editing ---
+    Edit:
+      policy: restricted
+      # Scope to project root — the path guard hook enforces this,
+      # but explicit deny_paths add an extra layer for critical files.
+      deny_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "credentials.json"
+        - ".aws/credentials"
+        - ".netrc"
+        - "id_rsa"
+        - "*.pem"
+        - "*.key"
+
+    # --- File Writing (full overwrites) ---
+    Write:
+      policy: restricted
+      deny_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+      # Ask before overwriting configuration files
+      ask_paths:
+        - "package.json"
+        - "pyproject.toml"
+        - "Dockerfile"
+        - "docker-compose*.yml"
+
+    # --- File Reading ---
+    # Reading is generally safe, but flag sensitive files.
+    Read:
+      policy: allow
+      ask_paths:
+        - ".env"
+        - ".env.*"
+        - ".ssh/*"
+        - "*.pem"
+        - "*.key"
+
+    # --- Web Access ---
+    # If your agent can fetch URLs, restrict to known-safe domains.
+    WebFetch:
+      policy: restricted
+      allow_domains:
+        - "github.com"
+        - "api.github.com"
+        - "raw.githubusercontent.com"
+        - "docs.python.org"
+        - "pypi.org"
+        - "registry.npmjs.org"
+        - "stackoverflow.com"
+
+
+# ----------------------------------------------------------------------------
+# Risk Classification
+# ----------------------------------------------------------------------------
+# The risk classifier scores each tool call. Thresholds determine
+# the response at each level.
+
+risk:
+  classifier: rules          # "rules" = fast regex matching; "hybrid" = rules + LLM fallback
+  thresholds:
+    low: allow               # Low risk: proceed without interruption
+    medium: allow            # Medium risk: allow but log (change to "ask" for stricter)
+    high: deny               # High risk: block the operation
+    critical: deny           # Critical risk: block immediately
+
+
+# ----------------------------------------------------------------------------
+# Hooks
+# ----------------------------------------------------------------------------
+# Built-in hook profiles:
+#   minimal:  secret_scanner + path_guard
+#   standard: minimal + risk_classifier + output_sanitizer (recommended)
+#   strict:   standard + config_protector (blocks linter config changes)
+
+hooks:
+  profile: standard
+  # You can add custom hooks in Python — see examples/custom_hooks.py
+
+
+# ----------------------------------------------------------------------------
+# Audit
+# ----------------------------------------------------------------------------
+# Every governance decision is logged for transparency and compliance.
+# The JSONL format makes it easy to stream, rotate, and analyze.
+
+audit:
+  enabled: true
+  format: jsonl
+  output: .autoharness/audit.jsonl
+  retention_days: 90         # Auto-delete audit records older than this
+  include:
+    - tool_call              # Allowed tool executions
+    - tool_blocked           # Blocked tool calls (most important for review)
+    - tool_error             # Errors during governance evaluation
+    - hook_fired             # Hook activations with details
+    - permission_check       # Permission evaluation decisions

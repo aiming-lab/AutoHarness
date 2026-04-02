@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HarnessAgent Cloud</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header class="header">
+    <div class="header-brand">
+        <div class="header-logo">AL</div>
+        <span class="header-title">HarnessAgent Cloud</span>
+        <span class="header-subtitle">governance dashboard</span>
+    </div>
+    <div class="connection-status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">connected</span>
+    </div>
+</header>
+
+<!-- ── Main Content ────────────────────────────────────────────────────── -->
+<div class="container">
+
+    <!-- Stats Row -->
+    <div class="stats-row">
+        <div class="stat-card" id="cardTotal">
+            <div class="stat-label">Total Calls</div>
+            <div class="stat-value" id="statTotal">--</div>
+            <div class="stat-delta" id="deltaTotal"></div>
+        </div>
+        <div class="stat-card" id="cardBlockRate">
+            <div class="stat-label">Block Rate</div>
+            <div class="stat-value" id="statBlockRate">--%</div>
+            <div class="stat-delta" id="deltaBlockRate"></div>
+        </div>
+        <div class="stat-card danger" id="cardHighRisk">
+            <div class="stat-label">High Risk</div>
+            <div class="stat-value danger" id="statHighRisk">--</div>
+            <div class="stat-delta" id="deltaHighRisk"></div>
+        </div>
+        <div class="stat-card" id="cardSessions">
+            <div class="stat-label">Active Sessions</div>
+            <div class="stat-value" id="statSessions">--</div>
+            <div class="stat-delta" id="deltaSessions"></div>
+        </div>
+    </div>
+
+    <!-- Mini Timeline -->
+    <div class="panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <div class="panel-title">Activity Timeline</div>
+            <div class="panel-badge" id="timelineRange">--</div>
+        </div>
+        <div class="timeline-chart" id="timelineChart"></div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+
+        <!-- Left: Recent Actions -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Recent Actions</div>
+                <div class="panel-badge" id="recordCount">0 records</div>
+            </div>
+            <div class="panel-body">
+                <div class="records-table-wrap">
+                    <table class="records-table" id="recordsTable">
+                        <thead>
+                            <tr>
+                                <th data-sort="tool_name">Tool</th>
+                                <th data-sort="risk_level">Risk</th>
+                                <th data-sort="decision">Decision</th>
+                                <th data-sort="timestamp">Time</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordsBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="empty-state" id="emptyState" style="display: none;">
+                    <div class="empty-state-icon">&#x2615;</div>
+                    <div class="empty-state-text">No audit records yet. HarnessAgent is watching.</div>
+                    <div class="empty-state-hint">Records appear when agents make tool calls.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Charts + Blocked Reasons -->
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+            <!-- Risk Donut -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Risk Distribution</div>
+                </div>
+                <div class="panel-body">
+                    <div class="donut-chart-container" id="donutContainer">
+                        <div class="donut-chart" id="donutChart">
+                            <div class="donut-hole">
+                                <div class="donut-hole-value" id="donutTotal">0</div>
+                                <div class="donut-hole-label">total</div>
+                            </div>
+                        </div>
+                        <div class="donut-legend" id="donutLegend"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Blocked Reasons -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Top Blocked Reasons</div>
+                </div>
+                <div class="panel-body">
+                    <div class="blocked-reasons" id="blockedReasons">
+                        <div class="empty-state" id="blockedEmpty">
+                            <div class="empty-state-text" style="font-size: 0.8rem;">No blocked calls.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Controls Bar -->
+    <div class="controls-bar">
+        <div class="control-group">
+            <span class="control-label">Session</span>
+            <select class="control-select" id="sessionFilter">
+                <option value="">All Sessions</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <span class="control-label">Limit</span>
+            <select class="control-select" id="limitSelect">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+            </select>
+        </div>
+        <div class="refresh-indicator">
+            auto-refresh in <span class="countdown" id="countdown">10</span>s
+        </div>
+    </div>
+</div>
+
+<!-- ── JavaScript ──────────────────────────────────────────────────────── -->
+<script>
+(function() {
+    'use strict';
+
+    // -- State ---------------------------------------------------------------
+    let currentSession = '';
+    let currentLimit = 50;
+    let sortColumn = 'timestamp';
+    let sortDir = 'desc';
+    let refreshTimer = null;
+    let countdownValue = 10;
+    let prevSummary = null;
+
+    // -- DOM refs ------------------------------------------------------------
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    // -- Init ----------------------------------------------------------------
+    init();
+
+    function init() {
+        // Read session from URL
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('session')) {
+            currentSession = params.get('session');
+        }
+
+        // Bind controls
+        $('#sessionFilter').addEventListener('change', onSessionChange);
+        $('#limitSelect').addEventListener('change', onLimitChange);
+
+        // Bind sortable headers
+        $$('.records-table th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => onSort(th.dataset.sort));
+        });
+
+        // Initial fetch
+        fetchAll();
+
+        // Load sessions list
+        fetchSessions();
+
+        // Auto-refresh
+        startCountdown();
+    }
+
+    // -- Data fetching -------------------------------------------------------
+    async function fetchAll() {
+        try {
+            const [summaryRes, recordsRes, timelineRes] = await Promise.all([
+                fetch(`/api/summary${currentSession ? '?session=' + encodeURIComponent(currentSession) : ''}`),
+                fetch(`/api/records?limit=${currentLimit}&offset=0${currentSession ? '&session=' + encodeURIComponent(currentSession) : ''}`),
+                fetch(`/api/timeline${currentSession ? '?session=' + encodeURIComponent(currentSession) : ''}`),
+            ]);
+
+            if (summaryRes.ok) {
+                const summary = await summaryRes.json();
+                renderSummary(summary);
+            }
+            if (recordsRes.ok) {
+                const data = await recordsRes.json();
+                renderRecords(data);
+            }
+            if (timelineRes.ok) {
+                const timeline = await timelineRes.json();
+                renderTimeline(timeline);
+            }
+
+            setConnected(true);
+        } catch (e) {
+            console.error('Fetch error:', e);
+            setConnected(false);
+        }
+    }
+
+    async function fetchSessions() {
+        try {
+            const res = await fetch('/api/sessions');
+            if (!res.ok) return;
+            const sessions = await res.json();
+            const select = $('#sessionFilter');
+            // Keep first option
+            while (select.options.length > 1) select.remove(1);
+            sessions.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.session_id;
+                opt.textContent = s.session_id.length > 24
+                    ? s.session_id.substring(0, 24) + '...'
+                    : s.session_id;
+                opt.title = `${s.session_id} (${s.total} calls)`;
+                if (s.session_id === currentSession) opt.selected = true;
+                select.appendChild(opt);
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    // -- Renderers -----------------------------------------------------------
+    function renderSummary(s) {
+        animateValue('statTotal', s.total_calls);
+        animateValue('statBlockRate', s.block_rate + '%');
+        animateValue('statHighRisk', s.high_risk_count);
+        animateValue('statSessions', s.active_sessions);
+
+        // Color coding
+        const blockRateCard = $('#cardBlockRate');
+        if (s.block_rate > 20) {
+            blockRateCard.classList.add('danger');
+            $('#statBlockRate').classList.add('danger');
+        } else if (s.block_rate > 5) {
+            blockRateCard.classList.add('warning');
+            $('#statBlockRate').classList.add('warning');
+        } else {
+            blockRateCard.classList.remove('danger', 'warning');
+            $('#statBlockRate').classList.remove('danger', 'warning');
+        }
+
+        // Donut chart
+        renderDonut(s.risk_distribution, s.total_calls);
+
+        // Blocked reasons
+        renderBlockedReasons(s.top_blocked_reasons, s.blocked_count);
+
+        prevSummary = s;
+    }
+
+    function animateValue(id, value) {
+        const el = $('#' + id);
+        if (!el) return;
+        const prev = el.textContent;
+        const next = String(value);
+        if (prev !== next && prev !== '--' && prev !== '--%') {
+            el.textContent = next;
+            el.closest('.stat-card')?.classList.add('updated');
+            setTimeout(() => el.closest('.stat-card')?.classList.remove('updated'), 700);
+        } else {
+            el.textContent = next;
+        }
+    }
+
+    function renderRecords(data) {
+        const tbody = $('#recordsBody');
+        const records = data.records || [];
+
+        $('#recordCount').textContent = `${data.total} records`;
+
+        if (records.length === 0) {
+            tbody.innerHTML = '';
+            $('#emptyState').style.display = 'flex';
+            return;
+        }
+
+        $('#emptyState').style.display = 'none';
+
+        // Sort
+        records.sort((a, b) => {
+            let va = a[sortColumn] || '';
+            let vb = b[sortColumn] || '';
+            if (typeof va === 'string') va = va.toLowerCase();
+            if (typeof vb === 'string') vb = vb.toLowerCase();
+            if (va < vb) return sortDir === 'asc' ? -1 : 1;
+            if (va > vb) return sortDir === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        tbody.innerHTML = records.map(r => {
+            const riskBadge = r.risk_level
+                ? `<span class="badge badge-risk-${r.risk_level}">${r.risk_level}</span>`
+                : '<span style="color: var(--text-muted); font-size: 0.7rem;">--</span>';
+
+            const decisionBadge = `<span class="badge badge-${r.decision}">${r.decision}</span>`;
+
+            const ts = new Date(r.timestamp);
+            const timeStr = ts.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const dateStr = ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+            const reason = r.decision_reason || r.risk_reason || '';
+
+            return `<tr>
+                <td class="tool-name">${escapeHtml(r.tool_name)}</td>
+                <td>${riskBadge}</td>
+                <td>${decisionBadge}</td>
+                <td class="timestamp" title="${r.timestamp}">${dateStr} ${timeStr}</td>
+                <td class="reason-cell" title="${escapeHtml(reason)}">${escapeHtml(reason)}</td>
+            </tr>`;
+        }).join('');
+
+        // Update sort indicators
+        $$('.records-table th').forEach(th => {
+            th.classList.remove('sorted-asc', 'sorted-desc');
+            if (th.dataset.sort === sortColumn) {
+                th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+            }
+        });
+    }
+
+    function renderDonut(dist, total) {
+        const chart = $('#donutChart');
+        const legend = $('#donutLegend');
+        $('#donutTotal').textContent = total;
+
+        const colors = {
+            low: 'var(--green)',
+            medium: 'var(--yellow)',
+            high: 'var(--orange)',
+            critical: 'var(--red)',
+            unassessed: '#475569',
+        };
+
+        const order = ['critical', 'high', 'medium', 'low', 'unassessed'];
+        const segments = [];
+        let cumulative = 0;
+
+        for (const level of order) {
+            const count = dist[level] || 0;
+            if (count === 0) continue;
+            const pct = total > 0 ? (count / total) * 100 : 0;
+            segments.push({ level, count, pct, start: cumulative, color: colors[level] });
+            cumulative += pct;
+        }
+
+        // Build conic-gradient
+        if (segments.length === 0) {
+            chart.style.background = 'var(--bg-elevated)';
+        } else {
+            const stops = segments.map(s =>
+                `${s.color} ${s.start}% ${s.start + s.pct}%`
+            ).join(', ');
+            chart.style.background = `conic-gradient(${stops})`;
+        }
+
+        // Legend
+        legend.innerHTML = segments.map(s => `
+            <div class="legend-item">
+                <div class="legend-dot" style="background: ${s.color}"></div>
+                <span class="legend-label">${s.level}</span>
+                <span class="legend-count">${s.count}</span>
+            </div>
+        `).join('');
+    }
+
+    function renderBlockedReasons(reasons, blockedTotal) {
+        const container = $('#blockedReasons');
+        const entries = Object.entries(reasons || {});
+
+        if (entries.length === 0) {
+            container.innerHTML = '<div class="empty-state"><div class="empty-state-text" style="font-size: 0.8rem;">No blocked calls. All clear.</div></div>';
+            return;
+        }
+
+        const maxCount = Math.max(...entries.map(([, c]) => c), 1);
+
+        container.innerHTML = entries.map(([reason, count]) => {
+            const pct = (count / maxCount) * 100;
+            const short = reason.length > 55 ? reason.substring(0, 55) + '...' : reason;
+            return `
+                <div class="blocked-reason-item">
+                    <div class="blocked-count">${count}x</div>
+                    <div class="blocked-bar"><div class="blocked-bar-fill" style="width: ${pct}%"></div></div>
+                    <div class="blocked-text" title="${escapeHtml(reason)}">${escapeHtml(short)}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderTimeline(data) {
+        const container = $('#timelineChart');
+
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.75rem;">No timeline data</div>';
+            $('#timelineRange').textContent = '--';
+            return;
+        }
+
+        // Show last 24 bars max
+        const sliced = data.slice(-24);
+        const maxTotal = Math.max(...sliced.map(d => d.total), 1);
+
+        if (sliced.length > 0) {
+            const first = sliced[0].hour.replace('T', ' ').replace(':00:00Z', 'h');
+            const last = sliced[sliced.length - 1].hour.replace('T', ' ').replace(':00:00Z', 'h');
+            $('#timelineRange').textContent = `${first} - ${last}`;
+        }
+
+        container.innerHTML = sliced.map(d => {
+            const h = Math.max((d.total / maxTotal) * 100, 4);
+            const cls = d.blocked > 0 ? 'has-blocked' : '';
+            const tip = `${d.hour.replace('T', ' ').replace(':00:00Z', 'h')}: ${d.total} calls, ${d.blocked} blocked`;
+            return `<div class="timeline-bar ${cls}" style="height: ${h}%"><div class="tooltip">${escapeHtml(tip)}</div></div>`;
+        }).join('');
+    }
+
+    // -- Event handlers ------------------------------------------------------
+    function onSessionChange(e) {
+        currentSession = e.target.value;
+        const url = new URL(window.location);
+        if (currentSession) {
+            url.searchParams.set('session', currentSession);
+        } else {
+            url.searchParams.delete('session');
+        }
+        history.replaceState(null, '', url);
+        fetchAll();
+    }
+
+    function onLimitChange(e) {
+        currentLimit = parseInt(e.target.value, 10);
+        fetchAll();
+    }
+
+    function onSort(col) {
+        if (sortColumn === col) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortColumn = col;
+            sortDir = 'asc';
+        }
+        fetchAll();
+    }
+
+    // -- Helpers -------------------------------------------------------------
+    function setConnected(ok) {
+        const dot = $('#statusDot');
+        const text = $('#statusText');
+        if (ok) {
+            dot.classList.remove('disconnected');
+            text.textContent = 'connected';
+        } else {
+            dot.classList.add('disconnected');
+            text.textContent = 'disconnected';
+        }
+    }
+
+    function startCountdown() {
+        countdownValue = 10;
+        $('#countdown').textContent = countdownValue;
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(() => {
+            countdownValue--;
+            if (countdownValue <= 0) {
+                countdownValue = 10;
+                fetchAll();
+            }
+            $('#countdown').textContent = countdownValue;
+        }, 1000);
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+})();
+</script>
+
+</body>
+</html>
