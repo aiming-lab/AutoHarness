@@ -9,6 +9,7 @@ from __future__ import annotations
 
 MINIMAL_CONSTITUTION = """\
 version: "1.0"
+mode: {mode}
 identity:
   name: "{project_name}"
   description: "Minimal governance for {project_type} project"
@@ -33,6 +34,7 @@ permissions:
 
 STANDARD_CONSTITUTION = """\
 version: "1.0"
+mode: {mode}
 identity:
   name: "{project_name}"
   description: "Standard governance for {project_type} project"
@@ -92,6 +94,7 @@ audit:
 
 STRICT_CONSTITUTION = """\
 version: "1.0"
+mode: {mode}
 identity:
   name: "{project_name}"
   description: "Strict governance for {project_type} project"
@@ -199,19 +202,23 @@ def render_constitution(
     template: str,
     project_name: str,
     project_type: str,
+    mode: str = "enhanced",
 ) -> str:
     """Substitute template variables into a constitution template.
 
     Args:
-        template: Raw constitution YAML with ``{project_name}`` / ``{project_type}`` placeholders.
+        template: Raw constitution YAML with ``{project_name}`` / ``{project_type}`` / ``{mode}`` placeholders.
         project_name: The project name to inject.
         project_type: The detected or chosen project type string.
+        mode: Pipeline mode (core / standard / enhanced).
 
     Returns:
         The rendered YAML string ready to write to disk.
     """
-    return template.replace("{project_name}", project_name).replace(
-        "{project_type}", project_type
+    return (
+        template.replace("{project_name}", project_name)
+        .replace("{project_type}", project_type)
+        .replace("{mode}", mode)
     )
 
 
