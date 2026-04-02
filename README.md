@@ -69,7 +69,7 @@ client = AutoHarness.wrap(OpenAI())
 
 ## 🔥 News
 
-- **[04/01/2026]** [**v0.1.0 Released**](https://github.com/aiming-lab/AutoHarness/releases/tag/v0.1.0): Three-tier pipeline modes (Core / Standard / Enhanced), 6-step governance pipeline, risk pattern matching, YAML constitution, trace-based diagnostics, multi-agent profiles, session persistence with cost tracking. **958 tests passing.**
+- **[04/01/2026]** [**v0.1.0 Released**](https://github.com/aiming-lab/AutoHarness/releases/tag/v0.1.0): Three-tier pipeline modes (Core / Standard / Enhanced ⚠️), 6-step governance pipeline, risk pattern matching, YAML constitution, trace-based diagnostics, multi-agent profiles, session persistence with cost tracking. **958 tests passing.**
 
 
 ---
@@ -111,7 +111,7 @@ AutoHarness supports three pipeline modes. Choose the level of governance that f
 |:-----|:---------|:--------|:------------|:---------|
 | **Core** | 6-step | Token budget + truncation | Single agent | Lightweight governance |
 | **Standard** | 8-step | + Microcompact + trace store | Basic profiles | Production agents |
-| **Enhanced** | 14-step | + LLM summarization + image strip | Fork / Swarm / Background | Maximum governance |
+| **Enhanced ⚠️** | 14-step | + LLM summarization + image strip | Fork / Swarm / Background | Maximum governance |
 
 ```python
 # Switch modes via constitution
@@ -124,7 +124,7 @@ mode: core      # or "standard" or "enhanced"
 autoharness mode enhanced
 ```
 
-> **Enhanced mode is the default.** Users get the strongest governance out of the box. Switch to Core for minimal overhead.
+> **Enhanced ⚠️ is the default mode.** Users get the strongest governance out of the box. Switch to Core for minimal overhead.
 
 > **[Full mode comparison →](docs/features.md#pipeline-modes)**
 
@@ -198,7 +198,7 @@ autoharness export --format cursor        # Export cross-harness constitution
 
 ## 🙏 Acknowledgments
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) by Anthropic: engineering patterns that inspired some of our Enhanced mode features
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) by Anthropic: engineering patterns that inspired some of our features in the Enhanced ⚠️ mode
 - [Codex](https://github.com/openai/codex) by OpenAI: context engineering practices that informed our context management design
 
 
