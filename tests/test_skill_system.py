@@ -107,6 +107,22 @@ class TestParseSkillFile:
         with pytest.raises(ValueError, match=r"myfile\.md"):
             parse_skill_file("no frontmatter", source_path="myfile.md")
 
+    def test_utf8_bom_and_eof_closing_fence(self) -> None:
+        content = "\ufeff---\r\nname: arabic-audit\r\ndescription: مراجعة النظام\r\n---"
+        result = parse_skill_file(content)
+        assert result.metadata.name == "arabic-audit"
+        assert result.metadata.description == "مراجعة النظام"
+        assert result.body == ""
+
+    def test_multibyte_utf8_token_estimation_is_not_undercounted(self) -> None:
+        from autoharness.context.tokens import estimate_tokens, estimate_tokens_by_type
+
+        ascii_text = "a" * 400
+        arabic_text = "م" * 400  # 800 UTF-8 bytes
+        assert estimate_tokens(ascii_text) == 100
+        assert estimate_tokens(arabic_text) == 200
+        assert estimate_tokens_by_type(arabic_text, "json") == 400
+
 
 # ---------------------------------------------------------------------------
 # E.1  SkillMetadata defaults

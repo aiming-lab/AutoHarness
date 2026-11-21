@@ -27,10 +27,11 @@ IMAGE_MAX_TOKEN_SIZE: int = 2000
 
 
 def estimate_tokens(text: str) -> int:
-    """Estimate token count for a text string.
+    """Estimate token count for a text string using UTF-8 byte length.
 
-    Uses the ~4 characters per token heuristic, which is a reasonable
-    approximation for English text with the Claude/GPT tokenizers.
+    Uses ``BYTES_PER_TOKEN_DEFAULT`` (4 UTF-8 bytes per token): identical to
+    ``len(text) // 4`` on ASCII English while avoiding ~2x-3x undercounting on
+    multi-byte scripts such as Arabic and CJK.
 
     Parameters
     ----------
@@ -44,11 +45,11 @@ def estimate_tokens(text: str) -> int:
     """
     if not text:
         return 0
-    return max(1, len(text) // 4)
+    return max(1, len(text.encode("utf-8")) // BYTES_PER_TOKEN_DEFAULT)
 
 
 def estimate_tokens_by_type(text: str, content_type: str = "text") -> int:
-    """Estimate token count with content-type-aware byte ratios.
+    """Estimate token count with content-type-aware UTF-8 byte ratios.
 
     Parameters
     ----------
@@ -66,7 +67,7 @@ def estimate_tokens_by_type(text: str, content_type: str = "text") -> int:
     if not text:
         return 0
     bpt = BYTES_PER_TOKEN_JSON if content_type == "json" else BYTES_PER_TOKEN_DEFAULT
-    return max(1, len(text) // bpt)
+    return max(1, len(text.encode("utf-8")) // bpt)
 
 
 @dataclass
